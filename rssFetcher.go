@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/uutispuro/rssFetcher/rss"
+	"github.com/jelinden/rssFetcher/rss"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"log"
