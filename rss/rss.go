@@ -1,6 +1,7 @@
 package rss
 
 import (
+	"gopkg.in/mgo.v2/bson"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -80,6 +81,7 @@ type Image struct {
 }
 
 type Item struct {
+	Id        bson.ObjectId `json:"id" bson:"_id"`
 	Title     string
 	Content   string
 	Link      string
