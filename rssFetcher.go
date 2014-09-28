@@ -19,12 +19,13 @@ import (
 
 var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]*)$")
 var templates = template.Must(template.ParseFiles("edit.html", "view.html"))
+var mongoAddress = flag.String("address", "localhost", "mongo address")
 var (
 	addr = flag.Bool("addr", false, "find open address and print to final-port.txt")
 )
 
 func main() {
-	session, err := mgo.Dial("localhost")
+	session, err := mgo.Dial(*mongoAddress)
 	if err != nil {
 		panic(err)
 	}

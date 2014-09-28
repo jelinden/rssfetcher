@@ -102,3 +102,7 @@ type Enclosure struct {
 	Url  string `xml:"url,attr"`
 	Type string `xml:"type,attr"`
 }
+
+type Media struct {
+	Url string `xml:"url,attr"`
+}
