@@ -25,8 +25,11 @@ var (
 )
 
 func main() {
+	flag.Parse()
+	fmt.Println("mongoAddress " + *mongoAddress)
 	session, err := mgo.Dial(*mongoAddress)
 	if err != nil {
+		log.Fatal("not connected " + err.Error())
 		panic(err)
 	}
 	defer session.Close()

@@ -2,7 +2,6 @@ package rss
 
 import (
 	"bytes"
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
 )
@@ -62,16 +61,12 @@ func parseRSS2(data []byte) (*Feed, error) {
 		}
 		next.ID = item.ID
 		next.Read = false
-		itemAsJson, _ := json.Marshal(item)
-		fmt.Println("item " + string(itemAsJson))
-		fmt.Println("media length " + next.Title + " " + string(len(item.Media)))
 		if item.Enclosure.Url != "" {
 			next.Enclosure = item.Enclosure
 		} else if item.Media != nil && item.Media[len(item.Media)-1].Url != "" {
 			enclosure := Enclosure{}
 			enclosure.Url = item.Media[len(item.Media)-1].Url
 			next.Enclosure = enclosure
-			fmt.Println("next " + next.Title + " " + next.Enclosure.Url)
 		}
 		if _, ok := out.ItemMap[next.ID]; ok {
 			fmt.Printf("Warning: Item %q has duplicate ID.\n", next.Title)
