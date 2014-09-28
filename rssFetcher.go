@@ -54,7 +54,7 @@ func main() {
 		return
 	}
 
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":9200", nil)
 }
 
 func loadFeed(feedId string, session *mgo.Session) (*Feed, error) {
