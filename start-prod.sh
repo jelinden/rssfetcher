@@ -1,1 +1,1 @@
-go build rssFetcher.go && nohup ./rssFetcher -address 192.168.0.5:28517 &
+nohup ./rssFetcher -address localhost:28517 > rssFetcher.log & 2>&1&
