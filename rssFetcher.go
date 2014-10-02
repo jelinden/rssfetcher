@@ -153,7 +153,7 @@ func getNews(feeds []Feed, session *mgo.Session) {
 				}
 				result := rss.Item{}
 				if len(item.ID) != 0 {
-					err := c.Find(bson.M{"id": item.ID}).Select(bson.M{"_id": 1}).One(&result)
+					err := c.Find(bson.M{"id": item.ID}).Select(bson.M{"_id": 1, "date": 1}).One(&result)
 					if err == nil && len(result.Id) != 0 {
 						item.Id = result.Id
 						item.Date = result.Date
