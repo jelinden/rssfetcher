@@ -35,7 +35,7 @@ func main() {
 	defer session.Close()
 	session.SetMode(mgo.Monotonic, true)
 
-	go doEvery(2*time.Minute, getFeeds, session)
+	go doEvery(1*time.Minute, getFeeds, session)
 	flag.Parse()
 	http.HandleFunc("/view/", makeHandler(viewHandler, session))
 	http.HandleFunc("/edit/", makeHandler(editHandler, session))
@@ -156,7 +156,7 @@ func getNews(feeds []Feed, session *mgo.Session) {
 					err := c.Find(bson.M{"id": item.ID}).Select(bson.M{"_id": 1, "date": 1}).One(&result)
 					if err == nil && len(result.Id) != 0 {
 						item.Id = result.Id
-						item.Date = result.Date
+						//item.Date = result.Date
 						err2 := c.UpdateId(result.Id, &item)
 						if err2 != nil {
 							log.Println("updating rss with id failed " + err2.Error())
