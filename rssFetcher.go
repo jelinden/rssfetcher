@@ -140,7 +140,7 @@ func getNews(feeds []Feed, session *mgo.Session) {
 			fmt.Println("feed " + feeds[i].Name + " " + feeds[i].Category.Name)
 			c := session.DB("uutispuro").C("rss")
 			for k, item := range items.Items {
-				if k > 2 {
+				if k > 4 {
 					break
 				}
 

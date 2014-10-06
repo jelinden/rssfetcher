@@ -92,6 +92,7 @@ type Item struct {
 	Category  Category
 	Language  int
 	Source    string
+	Clicks    int
 }
 
 type Category struct {
