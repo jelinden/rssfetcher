@@ -67,6 +67,10 @@ func parseRSS2(data []byte) (*Feed, error) {
 			enclosure := Enclosure{}
 			enclosure.Url = item.Media[len(item.Media)-1].Url
 			next.Enclosure = enclosure
+		} else {
+			enclosure := Enclosure{}
+			enclosure.Url = channel.Image.Image().Url
+			next.Enclosure = enclosure
 		}
 		if _, ok := out.ItemMap[next.ID]; ok {
 			fmt.Printf("Warning: Item %q has duplicate ID.\n", next.Title)

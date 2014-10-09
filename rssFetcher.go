@@ -35,7 +35,7 @@ func main() {
 	defer session.Close()
 	session.SetMode(mgo.Monotonic, true)
 
-	go doEvery(1*time.Minute, getFeeds, session)
+	go doEvery(80*time.Second, getFeeds, session)
 	flag.Parse()
 	http.HandleFunc("/view/", makeHandler(viewHandler, session))
 	http.HandleFunc("/edit/", makeHandler(editHandler, session))
