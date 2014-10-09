@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/jelinden/rssFetcher/rss"
@@ -60,13 +61,16 @@ func main() {
 func loadFeed(feedId string, session *mgo.Session) (*Feed, error) {
 	c := session.DB("uutispuro").C("feed")
 	result := Feed{}
-	if feedId != "" {
-		c.Find(bson.M{"_id": bson.ObjectIdHex(feedId)}).One(&result)
-		feedAsJson, _ := json.Marshal(result)
-		fmt.Println("loaded " + string(feedAsJson))
-	} else {
-		result = Feed{Id: bson.NewObjectId()}
+	fmt.Println("loading " + feedId)
+	if feedId == "" {
+		return nil, errors.New("feedId was empty")
 	}
+	err := c.Find(bson.M{"_id": bson.ObjectIdHex(feedId)}).One(&result)
+	if err != nil {
+		return nil, err
+	}
+	feedAsJson, _ := json.Marshal(result)
+	fmt.Println("loaded " + string(feedAsJson))
 	return &result, nil
 }
 
@@ -97,16 +101,33 @@ func editHandler(w http.ResponseWriter, r *http.Request, feedId string, session 
 }
 
 func saveHandler(w http.ResponseWriter, r *http.Request, feedId string, session *mgo.Session) {
+	feed, _ := loadFeed(r.URL.Path[6:], session)
+	c := session.DB("uutispuro").C("feed")
 	lang, _ := strconv.Atoi(r.FormValue("language"))
 	category := rss.Category{Name: r.FormValue("category")}
-	feed := &Feed{
-		Id:       bson.ObjectIdHex(feedId),
-		Name:     r.FormValue("name"),
-		Url:      r.FormValue("url"),
-		Category: category,
-		Language: lang}
-	c := session.DB("uutispuro").C("feed")
-	c.Insert(&feed)
+
+	if feed != nil {
+		fmt.Println("url: " + feed.Url + r.URL.Path[6:])
+		fmt.Println("update")
+		feed := &Feed{
+			Id:       feed.Id,
+			Name:     r.FormValue("name"),
+			Url:      r.FormValue("url"),
+			Category: category,
+			Language: lang}
+		c.UpdateId(feed.Id, feed)
+	} else {
+		fmt.Println("insert")
+		feed = &Feed{Id: bson.NewObjectId()}
+		feed := &Feed{
+			Id:       bson.ObjectIdHex(feedId),
+			Name:     r.FormValue("name"),
+			Url:      r.FormValue("url"),
+			Category: category,
+			Language: lang}
+
+		c.Insert(&feed)
+	}
 	http.Redirect(w, r, "/view/", http.StatusFound)
 }
 
