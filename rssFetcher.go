@@ -178,6 +178,7 @@ func getNews(feeds []Feed, session *mgo.Session) {
 					if err == nil && len(result.Id) != 0 {
 						item.Id = result.Id
 						item.Date = result.Date
+						item.Clicks = result.Clicks
 						err2 := c.UpdateId(result.Id, &item)
 						if err2 != nil {
 							log.Println("updating rss with id failed " + err2.Error())
