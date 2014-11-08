@@ -96,7 +96,8 @@ type Item struct {
 }
 
 type Category struct {
-	Name string
+	Name      string
+	StyleName string
 }
 
 type Enclosure struct {
