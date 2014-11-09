@@ -98,6 +98,7 @@ type Item struct {
 type Category struct {
 	Name      string
 	StyleName string
+	EnName    string
 }
 
 type Enclosure struct {

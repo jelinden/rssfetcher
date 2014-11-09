@@ -201,6 +201,15 @@ func getNews(feeds []Feed, session *mgo.Session) {
 				Sparse:     true,
 			}
 			c.EnsureIndex(index)
+
+			indexFind := mgo.Index{
+				Key:        []string{"language", "date"},
+				Unique:     true,
+				DropDups:   true,
+				Background: true,
+				Sparse:     true,
+			}
+			c.EnsureIndex(indexFind)
 		}
 	}
 }
