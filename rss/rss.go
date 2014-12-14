@@ -93,8 +93,8 @@ type Item struct {
 	Language  int
 	Source    string
 	Clicks    int
-	Liked     int
-	Unliked   int
+	Likes     int
+	Unlikes   int
 }
 
 type Category struct {
