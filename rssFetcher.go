@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+    "strings"
 )
 
 var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]*)$")
@@ -164,34 +165,40 @@ func getNews(feeds []Feed, session *mgo.Session) {
 				if k > 4 {
 					break
 				}
+                item.Title = strings.TrimSpace(item.Title)
+                item.Link = strings.TrimSpace(item.Link)
+				item.Content = strings.TrimSpace(item.Content)                 
+                item.ID = strings.TrimSpace(item.ID)
+                if (item.Title != "" && item.Link != "") {
+    				item.Language = feeds[i].Language
+    				item.Category = feeds[i].Category
+    				item.Source = feeds[i].Name
+    				item.Language = feeds[i].Language
 
-				item.Language = feeds[i].Language
-				item.Category = feeds[i].Category
-				item.Source = feeds[i].Name
-				item.Language = feeds[i].Language
-				if item.Date.After(time.Now()) {
-					item.Date = time.Now()
-				}
-				result := rss.Item{}
-				if len(item.ID) != 0 {
-					err := c.Find(bson.M{"id": item.ID}).Select(bson.M{"_id": 1, "date": 1, "clicks": 1}).One(&result)
-					if err == nil && len(result.Id) != 0 {
-						item.Id = result.Id
-						item.Date = result.Date
-						item.Clicks = result.Clicks
-						err2 := c.UpdateId(result.Id, &item)
-						if err2 != nil {
-							log.Println("updating rss with id failed " + err2.Error())
-						}
-					} else if err != nil && len(item.ID) != 0 {
-						item.Id = bson.NewObjectId()
-						err3 := c.Insert(&item)
-						if err3 != nil {
-							log.Println("inserting rss failed " + err3.Error())
-						}
-					}
-					fmt.Println("  " + item.Date.Format("2006-01-02 15:04:05 -0700") + " " + item.Title)
-				}
+    				if item.Date.After(time.Now()) {
+    					item.Date = time.Now()
+    				}
+    				result := rss.Item{}
+    				if len(item.ID) != 0 {
+    					err := c.Find(bson.M{"id": item.ID}).Select(bson.M{"_id": 1, "date": 1, "clicks": 1}).One(&result)
+    					if err == nil && len(result.Id) != 0 {
+    						item.Id = result.Id
+    						item.Date = result.Date
+    						item.Clicks = result.Clicks
+    						err2 := c.UpdateId(result.Id, &item)
+    						if err2 != nil {
+    							log.Println("updating rss with id failed " + err2.Error())
+    						}
+    					} else if err != nil && len(item.ID) != 0 {
+    						item.Id = bson.NewObjectId()
+    						err3 := c.Insert(&item)
+    						if err3 != nil {
+    							log.Println("inserting rss failed " + err3.Error())
+    						}
+    					}
+    					fmt.Println("  " + item.Date.Format("2006-01-02 15:04:05 -0700") + " " + item.Title)
+    				}
+                }
 			}
 			index := mgo.Index{
 				Key:        []string{"id"},
@@ -203,7 +210,7 @@ func getNews(feeds []Feed, session *mgo.Session) {
 			c.EnsureIndex(index)
 
 			indexFind := mgo.Index{
-				Key:        []string{"language", "date"},
+				Key:        []string{"language", "-date"},
 				Unique:     true,
 				DropDups:   true,
 				Background: true,
