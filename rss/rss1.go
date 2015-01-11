@@ -61,7 +61,11 @@ func parseRSS1(data []byte) (*Feed, error) {
 		}
 		next.ID = item.ID
 		next.Read = false
-
+        if item.Media != nil && item.Media[len(item.Media)-1].Url != "" {
+			enclosure := Enclosure{}
+			enclosure.Url = item.Media[len(item.Media)-1].Url
+			next.Enclosure = enclosure
+		}
 		if _, ok := out.ItemMap[next.ID]; ok {
 			fmt.Printf("Warning: Item %q has duplicate ID.\n", next.Title)
 			continue
@@ -100,6 +104,8 @@ type rss1_0Item struct {
 	PubDate string   `xml:"pubDate"`
 	Date    string   `xml:"date"`
 	ID      string   `xml:"guid"`
+    Enclosure Enclosure `xml:"enclosure"`
+    Media     []Media   `xml:"http://search.yahoo.com/mrss/ thumbnail"`
 }
 
 type rss1_0Image struct {
