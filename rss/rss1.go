@@ -105,7 +105,7 @@ type rss1_0Item struct {
 	Date    string   `xml:"date"`
 	ID      string   `xml:"guid"`
     Enclosure Enclosure `xml:"enclosure"`
-    Media     []Media   `xml:"http://search.yahoo.com/mrss/ thumbnail"`
+    Media     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
 }
 
 type rss1_0Image struct {

@@ -67,6 +67,10 @@ func parseRSS2(data []byte) (*Feed, error) {
 			enclosure := Enclosure{}
 			enclosure.Url = item.Media[len(item.Media)-1].Url
 			next.Enclosure = enclosure
+		} else if item.Media2 != nil && item.Media2[len(item.Media2)-1].Url != "" {
+			enclosure := Enclosure{}
+			enclosure.Url = item.Media2[len(item.Media2)-1].Url
+			next.Enclosure = enclosure
 		} else {
 			enclosure := Enclosure{}
 			enclosure.Url = channel.Image.Image().Url
@@ -112,6 +116,7 @@ type rss2_0Item struct {
 	ID        string    `xml:"guid"`
 	Enclosure Enclosure `xml:"enclosure"`
 	Media     []Media   `xml:"http://search.yahoo.com/mrss/ thumbnail"`
+    Media2     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
 }
 
 type rss2_0Image struct {
