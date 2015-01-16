@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+    "github.com/PuerkitoBio/goquery"
+    "strings"
 )
 
 func parseRSS2(data []byte) (*Feed, error) {
@@ -71,7 +73,17 @@ func parseRSS2(data []byte) (*Feed, error) {
 			enclosure := Enclosure{}
 			enclosure.Url = item.Media2[len(item.Media2)-1].Url
 			next.Enclosure = enclosure
-		} else {
+		} else if strings.Contains(item.Content, "<img") {
+            doc, err := goquery.NewDocumentFromReader(strings.NewReader(item.Content)) 
+            if err != nil {
+                fmt.Println(err)
+            }
+            imgSrc,_ := doc.Find("img").First().Attr("src")
+            enclosure := Enclosure{}
+			enclosure.Url = imgSrc
+			next.Enclosure = enclosure
+
+        } else {
 			enclosure := Enclosure{}
 			enclosure.Url = channel.Image.Image().Url
 			next.Enclosure = enclosure

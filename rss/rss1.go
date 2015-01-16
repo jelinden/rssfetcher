@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+    "github.com/PuerkitoBio/goquery"
+    "strings"
 )
 
 func parseRSS1(data []byte) (*Feed, error) {
@@ -65,7 +67,17 @@ func parseRSS1(data []byte) (*Feed, error) {
 			enclosure := Enclosure{}
 			enclosure.Url = item.Media[len(item.Media)-1].Url
 			next.Enclosure = enclosure
-		}
+		} else if strings.Contains(item.Content, "<img") {
+            doc, err := goquery.NewDocumentFromReader(strings.NewReader(item.Content)) 
+            if err != nil {
+                fmt.Println(err)
+            }
+            imgSrc,_ := doc.Find("img").First().Attr("src")
+            enclosure := Enclosure{}
+			enclosure.Url = imgSrc
+			next.Enclosure = enclosure
+
+        }
 		if _, ok := out.ItemMap[next.ID]; ok {
 			fmt.Printf("Warning: Item %q has duplicate ID.\n", next.Title)
 			continue
