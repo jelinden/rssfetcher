@@ -66,7 +66,6 @@ func parseAtom(data []byte) (*Feed, error) {
             enclosure := Enclosure{}
 			enclosure.Url = imgSrc
 			next.Enclosure = enclosure
-
         }
 		if next.ID == "" {
 			fmt.Printf("Warning: Item %q has no ID and will be ignored.\n", next.Title)
@@ -104,7 +103,7 @@ type atomItem struct {
 	Date    string   `xml:"updated"`
 	ID      string   `xml:"id"`
     Enclosure Enclosure `xml:"enclosure"`
-    Media     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
+    Media     []Media   `xml:"http://search.yahoo.com/mrss/ thumbnail"`
     Media2     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
 }
 
