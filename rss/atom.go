@@ -37,7 +37,11 @@ func parseAtom(data []byte) (*Feed, error) {
 
 		next := new(Item)
 		next.Title = item.Title
-		next.Content = item.Content
+        if (item.Content != "") {
+		    next.Content = item.Content
+        } else {
+            next.Content = item.Content2
+        }
 		next.Link = item.Link.Href
 		if item.Date != "" {
 			next.Date, err = parseTime(item.Date)
@@ -103,6 +107,7 @@ type atomItem struct {
 	Date    string   `xml:"updated"`
 	ID      string   `xml:"id"`
     Enclosure Enclosure `xml:"enclosure"`
+    Content2 string  `xml:"content"`
     Media     []Media   `xml:"http://search.yahoo.com/mrss/ thumbnail"`
     Media2     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
 }
