@@ -57,10 +57,6 @@ func parseAtom(data []byte) (*Feed, error) {
 			enclosure := Enclosure{}
 			enclosure.Url = item.Media[len(item.Media)-1].Url
 			next.Enclosure = enclosure
-		} else if item.Media2 != nil && item.Media2[len(item.Media2)-1].Url != "" {
-			enclosure := Enclosure{}
-			enclosure.Url = item.Media2[len(item.Media2)-1].Url
-			next.Enclosure = enclosure
 		} else if strings.Contains(item.Content, "<img") {
             doc, err := goquery.NewDocumentFromReader(strings.NewReader(item.Content)) 
             if err != nil {
@@ -109,7 +105,6 @@ type atomItem struct {
     Enclosure Enclosure `xml:"enclosure"`
     Content2 string  `xml:"content"`
     Media     []Media   `xml:"http://search.yahoo.com/mrss/ thumbnail"`
-    Media2     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
 }
 
 type atomImage struct {
