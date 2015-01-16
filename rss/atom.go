@@ -5,6 +5,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"time"
+    "github.com/PuerkitoBio/goquery"
+    "strings"
 )
 
 func parseAtom(data []byte) (*Feed, error) {
@@ -45,7 +47,27 @@ func parseAtom(data []byte) (*Feed, error) {
 		}
 		next.ID = item.ID
 		next.Read = false
+        if item.Enclosure.Url != "" {
+			next.Enclosure = item.Enclosure
+		} else if item.Media != nil && item.Media[len(item.Media)-1].Url != "" {
+			enclosure := Enclosure{}
+			enclosure.Url = item.Media[len(item.Media)-1].Url
+			next.Enclosure = enclosure
+		} else if item.Media2 != nil && item.Media2[len(item.Media2)-1].Url != "" {
+			enclosure := Enclosure{}
+			enclosure.Url = item.Media2[len(item.Media2)-1].Url
+			next.Enclosure = enclosure
+		} else if strings.Contains(item.Content, "<img") {
+            doc, err := goquery.NewDocumentFromReader(strings.NewReader(item.Content)) 
+            if err != nil {
+                fmt.Println(err)
+            }
+            imgSrc,_ := doc.Find("img").First().Attr("src")
+            enclosure := Enclosure{}
+			enclosure.Url = imgSrc
+			next.Enclosure = enclosure
 
+        }
 		if next.ID == "" {
 			fmt.Printf("Warning: Item %q has no ID and will be ignored.\n", next.Title)
 			continue
@@ -81,6 +103,9 @@ type atomItem struct {
 	Link    atomLink `xml:"link"`
 	Date    string   `xml:"updated"`
 	ID      string   `xml:"id"`
+    Enclosure Enclosure `xml:"enclosure"`
+    Media     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
+    Media2     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
 }
 
 type atomImage struct {
