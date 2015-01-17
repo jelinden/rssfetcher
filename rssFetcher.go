@@ -9,9 +9,7 @@ import (
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"html/template"
-	"io/ioutil"
 	"log"
-	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -22,13 +20,11 @@ import (
 var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]*)$")
 var templates = template.Must(template.ParseFiles("edit.html", "view.html"))
 var mongoAddress = flag.String("address", "localhost", "mongo address")
-var (
-	addr = flag.Bool("addr", false, "find open address and print to final-port.txt")
-)
+var env = flag.String("env", "dev", "environment")
 
 func main() {
 	flag.Parse()
-	fmt.Println("mongoAddress " + *mongoAddress)
+	fmt.Println("mongoAddress " + *mongoAddress + " environment " + *env)
 	session, err := mgo.Dial(*mongoAddress)
 	if err != nil {
 		log.Fatal("not connected " + err.Error())
@@ -36,25 +32,15 @@ func main() {
 	}
 	defer session.Close()
 	session.SetMode(mgo.Monotonic, true)
-
-	go doEvery(80*time.Second, getFeeds, session)
+    if *env == "dev" {
+        go doEvery(15*time.Second, getFeeds, session)
+    } else {
+	    go doEvery(80*time.Second, getFeeds, session)
+    }
 	flag.Parse()
 	http.HandleFunc("/view/", makeHandler(viewHandler, session))
 	http.HandleFunc("/edit/", makeHandler(editHandler, session))
 	http.HandleFunc("/save/", makeHandler(saveHandler, session))
-	if *addr {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			log.Fatal(err)
-		}
-		err = ioutil.WriteFile("final-port.txt", []byte(l.Addr().String()), 0644)
-		if err != nil {
-			log.Fatal(err)
-		}
-		s := &http.Server{}
-		s.Serve(l)
-		return
-	}
 
 	http.ListenAndServe(":9200", nil)
 }

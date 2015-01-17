@@ -31,17 +31,19 @@ func parseAtom(data []byte) (*Feed, error) {
 
 	out.Items = make([]*Item, 0, len(feed.Items))
 	out.ItemMap = make(map[string]struct{})
-
 	// Process items.
-	for _, item := range feed.Items {
-
+	for i, item := range feed.Items {
+        if i > 5 {
+            break;
+        }
 		next := new(Item)
 		next.Title = item.Title
         if (item.Content != "") {
 		    next.Content = item.Content
         } else {
-            next.Content = item.Content2
+            next.Content = item.Content3
         }
+
 		next.Link = item.Link.Href
 		if item.Date != "" {
 			next.Date, err = parseTime(item.Date)
@@ -58,14 +60,11 @@ func parseAtom(data []byte) (*Feed, error) {
 			enclosure.Url = item.Media[len(item.Media)-1].Url
 			next.Enclosure = enclosure
 		} else if strings.Contains(item.Content, "<img") {
-            doc, err := goquery.NewDocumentFromReader(strings.NewReader(item.Content)) 
-            if err != nil {
-                fmt.Println(err)
-            }
-            imgSrc,_ := doc.Find("img").First().Attr("src")
-            enclosure := Enclosure{}
-			enclosure.Url = imgSrc
-			next.Enclosure = enclosure
+            setEnclosure(item.Content, next)
+        } else if strings.Contains(item.Content2, "<img") {
+            setEnclosure(item.Content2, next)
+        } else if strings.Contains(item.Content3, "<img") {
+            setEnclosure(item.Content3, next)
         }
 		if next.ID == "" {
 			fmt.Printf("Warning: Item %q has no ID and will be ignored.\n", next.Title)
@@ -85,6 +84,17 @@ func parseAtom(data []byte) (*Feed, error) {
 	return out, nil
 }
 
+func setEnclosure(content string, next *Item) {
+    doc, err := goquery.NewDocumentFromReader(strings.NewReader(content)) 
+    if err != nil {
+        fmt.Println(err)
+    }
+    imgSrc,_ := doc.Find("img").First().Attr("src")
+    enclosure := Enclosure{}
+	enclosure.Url = imgSrc
+	next.Enclosure = enclosure
+}
+
 type atomFeed struct {
 	XMLName     xml.Name   `xml:"feed"`
 	Title       string     `xml:"title"`
@@ -100,10 +110,11 @@ type atomItem struct {
 	Title   string   `xml:"title"`
 	Content string   `xml:"summary"`
 	Link    atomLink `xml:"link"`
-	Date    string   `xml:"updated"`
+	Date    string   `xml:"published"`
 	ID      string   `xml:"id"`
     Enclosure Enclosure `xml:"enclosure"`
-    Content2 string  `xml:"content"`
+    Content2 string  `xml:",innerxml"`
+    Content3 string  `xml:"content"`
     Media     []Media   `xml:"http://search.yahoo.com/mrss/ thumbnail"`
 }
 
