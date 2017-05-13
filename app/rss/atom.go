@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"strings"
 	"time"
-    "github.com/PuerkitoBio/goquery"
-    "strings"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 func parseAtom(data []byte) (*Feed, error) {
@@ -33,16 +34,16 @@ func parseAtom(data []byte) (*Feed, error) {
 	out.ItemMap = make(map[string]struct{})
 	// Process items.
 	for i, item := range feed.Items {
-        if i > 5 {
-            break;
-        }
+		if i > 5 {
+			break
+		}
 		next := new(Item)
 		next.Title = item.Title
-        if (item.Content != "") {
-		    next.Content = item.Content
-        } else {
-            next.Content = item.Content3
-        }
+		if item.Content != "" {
+			next.Content = item.Content
+		} else {
+			next.Content = item.Content3
+		}
 
 		next.Link = item.Link.Href
 		if item.Date != "" {
@@ -51,33 +52,33 @@ func parseAtom(data []byte) (*Feed, error) {
 				return nil, err
 			}
 		}
-		next.ID = item.ID
+		next.GUID = item.GUID
 		next.Read = false
-        if item.Enclosure.Url != "" {
+		if item.Enclosure.Url != "" {
 			next.Enclosure = item.Enclosure
 		} else if item.Media != nil && item.Media[len(item.Media)-1].Url != "" {
 			enclosure := Enclosure{}
 			enclosure.Url = item.Media[len(item.Media)-1].Url
 			next.Enclosure = enclosure
 		} else if strings.Contains(item.Content, "<img") {
-            setEnclosure(item.Content, next)
-        } else if strings.Contains(item.Content2, "<img") {
-            setEnclosure(item.Content2, next)
-        } else if strings.Contains(item.Content3, "<img") {
-            setEnclosure(item.Content3, next)
-        }
-		if next.ID == "" {
+			setEnclosure(item.Content, next)
+		} else if strings.Contains(item.Content2, "<img") {
+			setEnclosure(item.Content2, next)
+		} else if strings.Contains(item.Content3, "<img") {
+			setEnclosure(item.Content3, next)
+		}
+		if next.GUID == "" {
 			fmt.Printf("Warning: Item %q has no ID and will be ignored.\n", next.Title)
 			continue
 		}
 
-		if _, ok := out.ItemMap[next.ID]; ok {
+		if _, ok := out.ItemMap[next.GUID]; ok {
 			fmt.Printf("Warning: Item %q has duplicate ID.\n", next.Title)
 			continue
 		}
 
 		out.Items = append(out.Items, next)
-		out.ItemMap[next.ID] = struct{}{}
+		out.ItemMap[next.GUID] = struct{}{}
 		out.Unread++
 	}
 
@@ -85,12 +86,12 @@ func parseAtom(data []byte) (*Feed, error) {
 }
 
 func setEnclosure(content string, next *Item) {
-    doc, err := goquery.NewDocumentFromReader(strings.NewReader(content)) 
-    if err != nil {
-        fmt.Println(err)
-    }
-    imgSrc,_ := doc.Find("img").First().Attr("src")
-    enclosure := Enclosure{}
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(content))
+	if err != nil {
+		fmt.Println(err)
+	}
+	imgSrc, _ := doc.Find("img").First().Attr("src")
+	enclosure := Enclosure{}
 	enclosure.Url = imgSrc
 	next.Enclosure = enclosure
 }
@@ -106,16 +107,16 @@ type atomFeed struct {
 }
 
 type atomItem struct {
-	XMLName xml.Name `xml:"entry"`
-	Title   string   `xml:"title"`
-	Content string   `xml:"summary"`
-	Link    atomLink `xml:"link"`
-	Date    string   `xml:"published"`
-	ID      string   `xml:"id"`
-    Enclosure Enclosure `xml:"enclosure"`
-    Content2 string  `xml:",innerxml"`
-    Content3 string  `xml:"content"`
-    Media     []Media   `xml:"http://search.yahoo.com/mrss/ thumbnail"`
+	XMLName   xml.Name  `xml:"entry"`
+	Title     string    `xml:"title"`
+	Content   string    `xml:"summary"`
+	Link      atomLink  `xml:"link"`
+	Date      string    `xml:"published"`
+	GUID      string    `xml:"id"`
+	Enclosure Enclosure `xml:"enclosure"`
+	Content2  string    `xml:",innerxml"`
+	Content3  string    `xml:"content"`
+	Media     []Media   `xml:"http://search.yahoo.com/mrss/ thumbnail"`
 }
 
 type atomImage struct {
@@ -138,4 +139,3 @@ func (a *atomImage) Image() *Image {
 	out.Width = uint32(a.Width)
 	return out
 }
-

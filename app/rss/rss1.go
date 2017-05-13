@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
-    "github.com/PuerkitoBio/goquery"
-    "strings"
+	"strings"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 func parseRSS1(data []byte) (*Feed, error) {
@@ -38,12 +39,12 @@ func parseRSS1(data []byte) (*Feed, error) {
 	// Process items.
 	for _, item := range feed.Items {
 
-		if item.ID == "" {
+		if item.GUID == "" {
 			if item.Link == "" {
 				fmt.Printf("Warning: Item %q has no ID or link and will be ignored.\n", item.Title)
 				continue
 			}
-			item.ID = item.Link
+			item.GUID = item.Link
 		}
 
 		next := new(Item)
@@ -61,30 +62,30 @@ func parseRSS1(data []byte) (*Feed, error) {
 				return nil, err
 			}
 		}
-		next.ID = item.ID
+		next.GUID = item.GUID
 		next.Read = false
-        if item.Media != nil && item.Media[len(item.Media)-1].Url != "" {
+		if item.Media != nil && item.Media[len(item.Media)-1].Url != "" {
 			enclosure := Enclosure{}
 			enclosure.Url = item.Media[len(item.Media)-1].Url
 			next.Enclosure = enclosure
 		} else if strings.Contains(item.Content, "<img") {
-            doc, err := goquery.NewDocumentFromReader(strings.NewReader(item.Content)) 
-            if err != nil {
-                fmt.Println(err)
-            }
-            imgSrc,_ := doc.Find("img").First().Attr("src")
-            enclosure := Enclosure{}
+			doc, err := goquery.NewDocumentFromReader(strings.NewReader(item.Content))
+			if err != nil {
+				fmt.Println(err)
+			}
+			imgSrc, _ := doc.Find("img").First().Attr("src")
+			enclosure := Enclosure{}
 			enclosure.Url = imgSrc
 			next.Enclosure = enclosure
 
-        }
-		if _, ok := out.ItemMap[next.ID]; ok {
+		}
+		if _, ok := out.ItemMap[next.GUID]; ok {
 			fmt.Printf("Warning: Item %q has duplicate ID.\n", next.Title)
 			continue
 		}
 
 		out.Items = append(out.Items, next)
-		out.ItemMap[next.ID] = struct{}{}
+		out.ItemMap[next.GUID] = struct{}{}
 		out.Unread++
 	}
 
@@ -109,15 +110,15 @@ type rss1_0Channel struct {
 }
 
 type rss1_0Item struct {
-	XMLName xml.Name `xml:"item"`
-	Title   string   `xml:"title"`
-	Content string   `xml:"description"`
-	Link    string   `xml:"link"`
-	PubDate string   `xml:"pubDate"`
-	Date    string   `xml:"date"`
-	ID      string   `xml:"guid"`
-    Enclosure Enclosure `xml:"enclosure"`
-    Media     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
+	XMLName   xml.Name  `xml:"item"`
+	Title     string    `xml:"title"`
+	Content   string    `xml:"description"`
+	Link      string    `xml:"link"`
+	PubDate   string    `xml:"pubDate"`
+	Date      string    `xml:"date"`
+	GUID      string    `xml:"guid"`
+	Enclosure Enclosure `xml:"enclosure"`
+	Media     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
 }
 
 type rss1_0Image struct {
@@ -136,4 +137,3 @@ func (i *rss1_0Image) Image() *Image {
 	out.Width = uint32(i.Width)
 	return out
 }
-

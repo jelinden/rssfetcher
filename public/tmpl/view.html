@@ -1,0 +1,18 @@
+{{define "view"}}
+<html>
+    <head></head>
+    <body>
+        <h1>Feed list</h1>
+
+        <div>
+            <p><a href="/edit">Add a new feed</a></p>
+        </div>
+
+        <div>
+            {{range .}}
+            <div>{{.Name}} {{.Category.Name}} [<a href="/edit/{{.ID.Hex}}">edit</a>] {{.URL}}<div>
+            {{end}}
+        </div>
+    </body>
+</html>
+{{end}}

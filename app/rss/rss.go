@@ -1,15 +1,15 @@
 package rss
 
 import (
-	"gopkg.in/mgo.v2/bson"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
+
+	"gopkg.in/mgo.v2/bson"
 )
 
 func Parse(data []byte) (*Feed, error) {
-
 	if strings.Contains(string(data), "<rss") {
 		return parseRSS2(data)
 	} else if strings.Contains(string(data), "xmlns=\"http://purl.org/rss/1.0/\"") {
@@ -17,7 +17,6 @@ func Parse(data []byte) (*Feed, error) {
 	} else {
 		return parseAtom(data)
 	}
-
 	panic("Unreachable.")
 }
 
@@ -40,23 +39,18 @@ func FetchByFunc(fetchFunc FetchFunc, url string) (*Feed, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-
 	out, err := Parse(body)
 	if err != nil {
 		return nil, err
 	}
-
 	if out.Link == "" {
 		out.Link = url
 	}
-
 	out.UpdateURL = url
-
 	return out, nil
 }
 
@@ -81,24 +75,23 @@ type Image struct {
 }
 
 type Item struct {
-	Id        bson.ObjectId `json:"id" bson:"_id"`
-	Title     string
-	Content   string
-	Link      string
-	Date      time.Time
-	ID        string
-	Read      bool
-	Enclosure Enclosure
-	Category  Category
-	Language  int
-	Source    string
-	Clicks    int
-	Likes     int
-	Unlikes   int
+	ID        bson.ObjectId `json:"id" bson:"_id"`
+	Title     string        `json:"rssTitle" bson:"rssTitle"`
+	Content   string        `json:"rssDesc" bson:"rssDesc"`
+	Link      string        `json:"rssLink" bson:"rssLink"`
+	Date      time.Time     `json:"pubDate" bson:"pubDate"`
+	GUID      string        `json:"rssGuid" bson:"rssGuid"`
+	Read      bool          `json:"read" bson:"read"`
+	Enclosure Enclosure     `json:"enclosure" bson:"enclosure"`
+	Category  Category      `json:"category" bson:"category"`
+	Language  string        `json:"language" bson:"language"`
+	Source    string        `json:"rssSource" bson:"rssSource"`
+	Clicks    int           `json:"rssClicks" bson:"rssClicks"`
 }
 
 type Category struct {
-	Name      string
+	ID        bson.ObjectId `json:"id" bson:"_id"`
+	Name      string        `json:"categoryName" bson:"categoryName"`
 	StyleName string
 	EnName    string
 }

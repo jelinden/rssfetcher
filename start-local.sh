@@ -1,1 +1,1 @@
-go build rssFetcher.go && ./rssFetcher -address localhost
+go build rssfetcher.go && ./rssfetcher -address localhost

@@ -1,0 +1,22 @@
+{{define "edit"}}
+<html>
+    <head></head>
+    <body>
+        <h1>Editing {{.Name}}({{.Category.Name}})</h1>
+        <div>
+            <form action="/save/{{.ID.Hex}}" method="POST">
+                <div>Feed name: <input type="text" name="name" value="{{.Name}}"></input></div>
+                <div>Feed URL:<input type="text" name="url" value="{{.URL}}"></input></div>
+                <div>Site URL:<input type="text" name="siteUrl" value="{{.SiteURL}}"></input></div>
+                <div>Feed Category:<input type="text" name="category" value="{{.Category.Name}}"></input></div>
+                <div>Feed language:<input type="text" name="language" value="{{.Language}}"></input></div>
+                <div><input type="submit" value="Save"></div>
+            </form>
+        </div>
+        <div>{{.ID.Hex}}</div>
+        <div>
+            <a href="/view">Back to feed list</a>
+        </div>
+    </body>
+<html>
+{{end}}

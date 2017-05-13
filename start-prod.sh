@@ -1,7 +1,7 @@
 #!bin/bash
 git pull
 go build
-killall rssFetcher
+killall rssfetcher
 sleep 1
-nohup ./rssFetcher -env prod -address localhost:28517 > rssFetcher.log 2>&1&
-ps aux|grep rssFetcher
+nohup ./rssfetcher -env prod -address localhost:28517 > rssFetcher.log 2>&1&
+ps aux|grep rssfetcher
