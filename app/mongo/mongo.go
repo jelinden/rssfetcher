@@ -120,10 +120,11 @@ func getNewsFeeds(feeds []domain.Feed, i int, c chan feedStruct) {
 	item, err := rss.Fetch(feeds[i].URL)
 	if err != nil {
 		log.Println(err)
+	} else {
+		log.Println("feed " + feeds[i].Name + " " + feeds[i].Category.Name)
+		items := feedStruct{RSSFeed: feeds[i], Item: *item}
+		c <- items
 	}
-	log.Println("feed " + feeds[i].Name + " " + feeds[i].Category.Name)
-	items := feedStruct{RSSFeed: feeds[i], Item: *item}
-	c <- items
 }
 
 func saveNewsItems(items rss.Feed, feed domain.Feed, collection mgo.Collection) {
