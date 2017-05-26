@@ -134,7 +134,7 @@ func getNewsFeed(feeds []domain.Feed, c chan *feedStruct, i int) {
 		log.Println(err)
 		c <- nil
 	} else {
-		log.Println("feed " + feeds[i].Name + " " + feeds[i].Category.Name)
+		log.Println(i, "feed "+feeds[i].Name+" "+feeds[i].Category.Name)
 		items := feedStruct{RSSFeed: feeds[i], Item: *item}
 		c <- &items
 	}

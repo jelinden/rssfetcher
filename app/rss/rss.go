@@ -28,6 +28,7 @@ func Fetch(url string) (*Feed, error) {
 
 func FetchByClient(url string, client *http.Client) (*Feed, error) {
 	fetchFunc := func() (resp *http.Response, err error) {
+		client.Timeout = time.Second * 10
 		return client.Get(url)
 	}
 	return FetchByFunc(fetchFunc, url)
