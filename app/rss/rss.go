@@ -24,12 +24,13 @@ func Parse(data []byte) (*Feed, error) {
 type FetchFunc func() (resp *http.Response, err error)
 
 var client = &http.Client{
+	Timeout: time.Second * 10,
 	Transport: &http.Transport{
 		Dial: (&net.Dialer{
-			Timeout:   10 * time.Second,
+			Timeout:   5 * time.Second,
 			KeepAlive: 10 * time.Second,
 		}).Dial,
-		TLSHandshakeTimeout:   10 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: 10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	},
