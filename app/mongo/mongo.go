@@ -108,17 +108,23 @@ func GetNews(feeds []domain.Feed) {
 	defer m.Close()
 	collection := m.DB("news").C("newscollection")
 	c := make(chan *feedStruct)
-	for i := range feeds {
-		go getNewsFeeds(feeds, i, c)
-	}
+	go getNewsFeeds(feeds, c)
 	for i := range c {
 		if i != nil {
 			saveNewsItems(i.Item, i.RSSFeed, *collection)
 		}
 	}
+	log.Println("got all and closed the channel")
 }
 
-func getNewsFeeds(feeds []domain.Feed, i int, c chan *feedStruct) {
+func getNewsFeeds(feeds []domain.Feed, c chan *feedStruct) {
+	for i := range feeds {
+		getNewsFeed(feeds, c, i)
+	}
+	close(c)
+}
+
+func getNewsFeed(feeds []domain.Feed, c chan *feedStruct, i int) {
 	item, err := rss.Fetch(feeds[i].URL)
 	if err != nil {
 		log.Println(err)
@@ -129,9 +135,7 @@ func getNewsFeeds(feeds []domain.Feed, i int, c chan *feedStruct) {
 		c <- &items
 	}
 }
-
 func saveNewsItems(items rss.Feed, feed domain.Feed, collection mgo.Collection) {
-
 	for k, item := range items.Items {
 		if k > 4 {
 			break
@@ -177,66 +181,46 @@ func saveNewsItems(items rss.Feed, feed domain.Feed, collection mgo.Collection) 
 }
 
 func GetFeeds() []domain.Feed {
-	if mongoSession != nil {
-		m := mongoSession.Clone()
-		defer m.Close()
-		c := m.DB("news").C("feedcollection")
-		feedList := []domain.Feed{}
-		_ = c.Find(bson.M{}).All(&feedList)
-		return feedList
-	}
-	log.Println("mongoSession is nil")
-	return nil
+	m := mongoSession.Clone()
+	defer m.Close()
+	c := m.DB("news").C("feedcollection")
+	feedList := []domain.Feed{}
+	_ = c.Find(bson.M{}).All(&feedList)
+	return feedList
 }
 
 func GetCategories() []rss.Category {
-	if mongoSession != nil {
-		m := mongoSession.Clone()
-		defer m.Close()
-		c := m.DB("news").C("categorycollection")
-		categoryList := []rss.Category{}
-		_ = c.Find(bson.M{}).All(&categoryList)
-		return categoryList
-	}
-	log.Println("mongoSession is nil")
-	return nil
+	m := mongoSession.Clone()
+	defer m.Close()
+	c := m.DB("news").C("categorycollection")
+	categoryList := []rss.Category{}
+	_ = c.Find(bson.M{}).All(&categoryList)
+	return categoryList
 }
 
 func GetSubCategories() []rss.SubCategory {
-	if mongoSession != nil {
-		m := mongoSession.Clone()
-		defer m.Close()
-		c := m.DB("news").C("subcategorycollection")
-		subCategoryList := []rss.SubCategory{}
-		_ = c.Find(bson.M{}).All(&subCategoryList)
-		return subCategoryList
-	}
-	log.Println("mongoSession is nil")
-	return nil
+	m := mongoSession.Clone()
+	defer m.Close()
+	c := m.DB("news").C("subcategorycollection")
+	subCategoryList := []rss.SubCategory{}
+	_ = c.Find(bson.M{}).All(&subCategoryList)
+	return subCategoryList
 }
 
 func GetCategory(name string) rss.Category {
-	if mongoSession != nil {
-		m := mongoSession.Clone()
-		defer m.Close()
-		c := m.DB("news").C("categorycollection")
-		category := rss.Category{}
-		_ = c.Find(bson.M{"categoryName": name}).One(&category)
-		return category
-	}
-	log.Println("mongoSession is nil")
-	return rss.Category{}
+	m := mongoSession.Clone()
+	defer m.Close()
+	c := m.DB("news").C("categorycollection")
+	category := rss.Category{}
+	_ = c.Find(bson.M{"categoryName": name}).One(&category)
+	return category
 }
 
 func GetSubCategory(name string) rss.SubCategory {
-	if mongoSession != nil {
-		m := mongoSession.Clone()
-		defer m.Close()
-		c := m.DB("news").C("subcategorycollection")
-		subCategory := rss.SubCategory{}
-		_ = c.Find(bson.M{"subCategory": name}).One(&subCategory)
-		return subCategory
-	}
-	log.Println("mongoSession is nil")
-	return rss.SubCategory{}
+	m := mongoSession.Clone()
+	defer m.Close()
+	c := m.DB("news").C("subcategorycollection")
+	subCategory := rss.SubCategory{}
+	_ = c.Find(bson.M{"subCategory": name}).One(&subCategory)
+	return subCategory
 }
