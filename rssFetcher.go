@@ -25,6 +25,8 @@ func main() {
 	http.HandleFunc("/view/", makeHandler(handler.ViewHandler))
 	http.HandleFunc("/edit/", makeHandler(handler.EditHandler))
 	http.HandleFunc("/save/", makeHandler(handler.SaveHandler))
+	http.HandleFunc("/save/category", makeHandler(handler.SaveCategoryHandler))
+	http.HandleFunc("/save/subcategory", makeHandler(handler.SaveSubCategoryHandler))
 
 	http.ListenAndServe(":9200", nil)
 }

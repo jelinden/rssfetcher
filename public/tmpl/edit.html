@@ -2,18 +2,37 @@
 <html>
     <head></head>
     <body>
-        <h1>Editing {{.Name}}({{.Category.Name}})</h1>
+        <h1>Editing {{.Feed.Name}}({{.Feed.Category.Name}})</h1>
         <div>
-            <form action="/save/{{.ID.Hex}}" method="POST">
-                <div>Feed name: <input type="text" name="name" value="{{.Name}}"></input></div>
-                <div>Feed URL:<input type="text" name="url" value="{{.URL}}"></input></div>
-                <div>Site URL:<input type="text" name="siteUrl" value="{{.SiteURL}}"></input></div>
-                <div>Feed Category:<input type="text" name="category" value="{{.Category.Name}}"></input></div>
-                <div>Feed language:<input type="text" name="language" value="{{.Language}}"></input></div>
+            {{$feed := .Feed}}
+            <form action="/save/{{.Feed.ID.Hex}}" method="POST">
+                <div>Feed name: <input type="text" name="name" value="{{.Feed.Name}}"></input></div>
+                <div>Feed URL:<input type="text" name="url" value="{{.Feed.URL}}"></input></div>
+                <div>Site URL:<input type="text" name="siteUrl" value="{{.Feed.SiteURL}}"></input></div>
+                <div>Category:
+                    <select name="category">
+                        <option value="0" label="Select"></option>
+                        {{range .Categories}}
+                            <option {{if eq $feed.Category.Name .Name}}selected="selected"{{end}} 
+                                name="{{.Name}}" value="{{.Name}}">{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div>Sub category:
+                    <select name="subCategory">
+                        <option value="0" label="Select"></option>
+                        {{$feed := .Feed}}
+                        {{range .SubCategories}}
+                            <option {{if eq $feed.SubCategory.SubCategory .SubCategory}}selected="selected"{{end}} 
+                                name="{{.SubCategory}}" value="{{.SubCategory}}">{{.SubCategory}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div>Feed language:<input type="text" name="language" value="{{.Feed.Language}}"></input></div>
                 <div><input type="submit" value="Save"></div>
             </form>
         </div>
-        <div>{{.ID.Hex}}</div>
+        <div>{{.Feed.ID.Hex}}</div>
         <div>
             <a href="/view">Back to feed list</a>
         </div>

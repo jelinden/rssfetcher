@@ -75,25 +75,32 @@ type Image struct {
 }
 
 type Item struct {
-	ID        bson.ObjectId `json:"id" bson:"_id"`
-	Title     string        `json:"rssTitle" bson:"rssTitle"`
-	Content   string        `json:"rssDesc" bson:"rssDesc"`
-	Link      string        `json:"rssLink" bson:"rssLink"`
-	Date      time.Time     `json:"pubDate" bson:"pubDate"`
-	GUID      string        `json:"rssGuid" bson:"rssGuid"`
-	Read      bool          `json:"read" bson:"read"`
-	Enclosure Enclosure     `json:"enclosure" bson:"enclosure"`
-	Category  Category      `json:"category" bson:"category"`
-	Language  string        `json:"language" bson:"language"`
-	Source    string        `json:"rssSource" bson:"rssSource"`
-	Clicks    int           `json:"rssClicks" bson:"rssClicks"`
+	ID          bson.ObjectId `json:"id" bson:"_id"`
+	Title       string        `json:"rssTitle" bson:"rssTitle"`
+	Content     string        `json:"rssDesc" bson:"rssDesc"`
+	Link        string        `json:"rssLink" bson:"rssLink"`
+	Date        time.Time     `json:"pubDate" bson:"pubDate"`
+	GUID        string        `json:"rssGuid" bson:"rssGuid"`
+	Read        bool          `json:"read" bson:"read"`
+	Enclosure   Enclosure     `json:"enclosure" bson:"enclosure"`
+	Category    Category      `json:"category" bson:"category"`
+	SubCategory SubCategory   `json:"subCategory" bson:"subCategory"`
+	Language    string        `json:"language" bson:"language"`
+	Source      string        `json:"rssSource" bson:"rssSource"`
+	Clicks      int           `json:"rssClicks" bson:"rssClicks"`
 }
 
 type Category struct {
 	ID        bson.ObjectId `json:"id" bson:"_id"`
 	Name      string        `json:"categoryName" bson:"categoryName"`
-	StyleName string
-	EnName    string
+	StyleName string        `json:"styleName" bson:"styleName"`
+	EnName    string        `json:"enName" bson:"enName"`
+}
+
+type SubCategory struct {
+	ID          bson.ObjectId `json:"id" bson:"_id"`
+	SubCategory string        `json:"subCategory" bson:"subCategory"`
+	EnName      string        `json:"enName" bson:"enName"`
 }
 
 type Enclosure struct {
