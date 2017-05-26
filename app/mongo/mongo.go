@@ -97,27 +97,37 @@ func GetFeed(feedID string) (*domain.Feed, error) {
 	return &result, nil
 }
 
+type feedStruct struct {
+	RSSFeed domain.Feed
+	Item    rss.Feed
+}
+
 func GetNews(feeds []domain.Feed) {
 	log.Println("getting news")
-	for i := range feeds {
-		go getNewsFeeds(feeds, i)
-	}
-}
-
-func getNewsFeeds(feeds []domain.Feed, i int) {
-	items, err := rss.Fetch(feeds[i].URL)
-	if err != nil {
-		log.Println(err)
-	} else {
-		log.Println("feed " + feeds[i].Name + " " + feeds[i].Category.Name)
-		saveNewsItems(items, feeds, i)
-	}
-}
-
-func saveNewsItems(items *rss.Feed, feeds []domain.Feed, i int) {
 	m := mongoSession.Clone()
 	defer m.Close()
-	c := m.DB("news").C("newscollection")
+	collection := m.DB("news").C("newscollection")
+	c := make(chan feedStruct, 100)
+	for i := range feeds {
+		go getNewsFeeds(feeds, i, c)
+	}
+	for i := range c {
+		saveNewsItems(i.Item, i.RSSFeed, *collection)
+	}
+}
+
+func getNewsFeeds(feeds []domain.Feed, i int, c chan feedStruct) {
+	item, err := rss.Fetch(feeds[i].URL)
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println("feed " + feeds[i].Name + " " + feeds[i].Category.Name)
+	items := feedStruct{RSSFeed: feeds[i], Item: *item}
+	c <- items
+}
+
+func saveNewsItems(items rss.Feed, feed domain.Feed, collection mgo.Collection) {
+
 	for k, item := range items.Items {
 		if k > 4 {
 			break
@@ -127,31 +137,31 @@ func saveNewsItems(items *rss.Feed, feeds []domain.Feed, i int) {
 		item.Content = strings.TrimSpace(item.Content)
 		item.GUID = strings.TrimSpace(item.GUID)
 		if item.Title != "" && item.Link != "" {
-			item.Language = feeds[i].Language
-			item.Category = feeds[i].Category
-			item.SubCategory = feeds[i].SubCategory
-			item.Source = feeds[i].Name
-			item.Language = feeds[i].Language
+			item.Language = feed.Language
+			item.Category = feed.Category
+			item.SubCategory = feed.SubCategory
+			item.Source = feed.Name
+			item.Language = feed.Language
 
 			if item.Date.After(time.Now()) {
 				item.Date = time.Now()
 			}
 			result := rss.Item{}
 			if len(item.GUID) != 0 {
-				err := c.Find(bson.M{"rssGuid": item.GUID}).Select(bson.M{"_id": 1, "pubDate": 1, "clicks": 1}).One(&result)
+				err := collection.Find(bson.M{"rssGuid": item.GUID}).Select(bson.M{"_id": 1, "pubDate": 1, "clicks": 1}).One(&result)
 				if err == nil && result.ID.Valid() {
 					item.ID = result.ID
 					if result.Date.Unix() > 0 {
 						item.Date = result.Date
 					}
 					item.Clicks = result.Clicks
-					err2 := c.UpdateId(item.ID, &item)
+					err2 := collection.UpdateId(item.ID, &item)
 					if err2 != nil {
 						log.Println("updating rss with id failed " + err2.Error())
 					}
 				} else if err != nil && len(item.GUID) != 0 {
 					item.ID = bson.NewObjectId()
-					err3 := c.Insert(&item)
+					err3 := collection.Insert(&item)
 					if err3 != nil {
 						log.Println("inserting rss failed " + err3.Error())
 					}
