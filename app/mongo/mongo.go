@@ -109,9 +109,14 @@ func GetNews(feeds []domain.Feed) {
 	collection := m.DB("news").C("newscollection")
 	c := make(chan *feedStruct)
 	go getNewsFeeds(feeds, c)
+	counter := 0
 	for i := range c {
+		counter++
 		if i != nil {
 			saveNewsItems(i.Item, i.RSSFeed, *collection)
+		}
+		if counter == len(feeds) {
+			close(c)
 		}
 	}
 	log.Println("got all and closed the channel")
@@ -119,9 +124,8 @@ func GetNews(feeds []domain.Feed) {
 
 func getNewsFeeds(feeds []domain.Feed, c chan *feedStruct) {
 	for i := range feeds {
-		getNewsFeed(feeds, c, i)
+		go getNewsFeed(feeds, c, i)
 	}
-	close(c)
 }
 
 func getNewsFeed(feeds []domain.Feed, c chan *feedStruct, i int) {
