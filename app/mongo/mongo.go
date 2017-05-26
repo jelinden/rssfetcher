@@ -113,7 +113,9 @@ func GetNews(feeds []domain.Feed) {
 	for i := range c {
 		counter++
 		if i != nil {
+			t := time.Now()
 			saveNewsItems(i.Item, i.RSSFeed, *collection)
+			log.Println("feed "+i.RSSFeed.Name+" "+i.RSSFeed.Category.Name, time.Now().Sub(t).Seconds())
 		}
 		if counter == len(feeds) {
 			close(c)
@@ -134,7 +136,6 @@ func getNewsFeed(feeds []domain.Feed, c chan *feedStruct, i int) {
 		log.Println(err)
 		c <- nil
 	} else {
-		log.Println(i, "feed "+feeds[i].Name+" "+feeds[i].Category.Name)
 		items := feedStruct{RSSFeed: feeds[i], Item: *item}
 		c <- &items
 	}
