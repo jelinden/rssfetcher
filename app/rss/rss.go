@@ -2,6 +2,7 @@ package rss
 
 import (
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -22,8 +23,27 @@ func Parse(data []byte) (*Feed, error) {
 
 type FetchFunc func() (resp *http.Response, err error)
 
+func timeoutDialer(cTimeout time.Duration, rwTimeout time.Duration) func(net, addr string) (c net.Conn, err error) {
+	return func(netw, addr string) (net.Conn, error) {
+		conn, err := net.DialTimeout(netw, addr, cTimeout)
+		if err != nil {
+			return nil, err
+		}
+		conn.SetDeadline(time.Now().Add(rwTimeout))
+		return conn, nil
+	}
+}
+
+func newTimeoutClient(connectTimeout time.Duration, readWriteTimeout time.Duration) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Dial: timeoutDialer(connectTimeout, readWriteTimeout),
+		},
+	}
+}
+
 func Fetch(url string) (*Feed, error) {
-	return FetchByClient(url, http.DefaultClient)
+	return FetchByClient(url, newTimeoutClient(time.Second*10, time.Second*10))
 }
 
 func FetchByClient(url string, client *http.Client) (*Feed, error) {
