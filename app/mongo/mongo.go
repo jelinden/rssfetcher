@@ -107,23 +107,26 @@ func GetNews(feeds []domain.Feed) {
 	m := mongoSession.Clone()
 	defer m.Close()
 	collection := m.DB("news").C("newscollection")
-	c := make(chan feedStruct, 100)
+	c := make(chan *feedStruct)
 	for i := range feeds {
 		go getNewsFeeds(feeds, i, c)
 	}
 	for i := range c {
-		saveNewsItems(i.Item, i.RSSFeed, *collection)
+		if i != nil {
+			saveNewsItems(i.Item, i.RSSFeed, *collection)
+		}
 	}
 }
 
-func getNewsFeeds(feeds []domain.Feed, i int, c chan feedStruct) {
+func getNewsFeeds(feeds []domain.Feed, i int, c chan *feedStruct) {
 	item, err := rss.Fetch(feeds[i].URL)
 	if err != nil {
 		log.Println(err)
+		c <- nil
 	} else {
 		log.Println("feed " + feeds[i].Name + " " + feeds[i].Category.Name)
 		items := feedStruct{RSSFeed: feeds[i], Item: *item}
-		c <- items
+		c <- &items
 	}
 }
 
