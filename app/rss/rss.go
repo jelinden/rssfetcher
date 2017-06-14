@@ -102,7 +102,7 @@ type Item struct {
 	SubCategory SubCategory   `json:"subCategory" bson:"subCategory"`
 	Language    string        `json:"language" bson:"language"`
 	Source      string        `json:"rssSource" bson:"rssSource"`
-	Clicks      int           `json:"rssClicks" bson:"rssClicks"`
+	Clicks      int           `json:"clicks" bson:"clicks"`
 }
 
 type Category struct {

@@ -161,7 +161,7 @@ func saveNewsItems(items rss.Feed, feed domain.Feed, collection mgo.Collection) 
 			}
 			result := rss.Item{}
 			if len(item.GUID) != 0 {
-				err := collection.Find(bson.M{"rssLink": item.Link}).Select(bson.M{"_id": 1, "pubDate": 1, "rssClicks": 1}).One(&result)
+				err := collection.Find(bson.M{"rssLink": item.Link}).Select(bson.M{"_id": 1, "pubDate": 1, "clicks": 1}).One(&result)
 				if err == nil && result.ID.Valid() {
 					item.ID = result.ID
 					if result.Date.Unix() > 0 {
