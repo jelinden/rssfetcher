@@ -45,11 +45,11 @@ func SaveHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := r.FormValue("language")
 	category := mongo.GetCategory(r.FormValue("category"))
-	if category.ID.Valid() {
+	if !category.ID.Valid() {
 		category.ID = bson.NewObjectId()
 	}
 	subCategory := mongo.GetSubCategory(r.FormValue("subCategory"))
-	if subCategory.ID.Valid() {
+	if !subCategory.ID.Valid() {
 		subCategory.ID = bson.NewObjectId()
 	}
 	name := r.FormValue("name")
