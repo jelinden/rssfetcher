@@ -31,7 +31,7 @@ func SaveFeed(feed *domain.Feed, lang string, name string, url string, siteURL s
 	m := mongoSession.Clone()
 	defer m.Close()
 	c := m.DB("news").C("feedcollection")
-	if feed != nil {
+	if feed != nil && feed.ID.Valid() {
 		log.Println("url: "+feed.URL, "updating")
 		feed := &domain.Feed{
 			ID:          feed.ID,

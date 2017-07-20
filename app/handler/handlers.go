@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 
 	"github.com/jelinden/rssfetcher/app/domain"
@@ -38,7 +39,10 @@ func EditHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveHandler(w http.ResponseWriter, r *http.Request) {
-	feed, _ := mongo.GetFeed(r.URL.Path[6:])
+	feed, err := mongo.GetFeed(r.URL.Path[6:])
+	if err != nil {
+		log.Println("error getting feed", err.Error())
+	}
 	lang := r.FormValue("language")
 	category := mongo.GetCategory(r.FormValue("category"))
 	subCategory := mongo.GetSubCategory(r.FormValue("subCategory"))
