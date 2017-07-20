@@ -43,7 +43,7 @@ func SaveFeed(feed *domain.Feed, lang string, name string, url string, siteURL s
 			Language:    lang}
 		c.UpdateId(feed.ID, feed)
 	} else {
-		log.Println("inserting" + url)
+		log.Println("inserting", url, "ids", category.ID, subCategory.ID)
 		feed := &domain.Feed{
 			ID:          bson.NewObjectId(),
 			Name:        name,
