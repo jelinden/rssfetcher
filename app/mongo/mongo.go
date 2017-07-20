@@ -32,7 +32,7 @@ func SaveFeed(feed *domain.Feed, lang string, name string, url string, siteURL s
 	defer m.Close()
 	c := m.DB("news").C("feedcollection")
 	if feed != nil && feed.ID.Valid() {
-		log.Println("url: "+feed.URL, "updating")
+		log.Println("url: "+feed.URL, "updating, ID:", feed.ID)
 		feed := &domain.Feed{
 			ID:          feed.ID,
 			Name:        name,
@@ -43,7 +43,7 @@ func SaveFeed(feed *domain.Feed, lang string, name string, url string, siteURL s
 			Language:    lang}
 		c.UpdateId(feed.ID, feed)
 	} else {
-		fmt.Println("inserting")
+		log.Println("inserting" + url)
 		feed := &domain.Feed{
 			ID:          bson.NewObjectId(),
 			Name:        name,
