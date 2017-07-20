@@ -37,19 +37,11 @@ var client = &http.Client{
 }
 
 func Fetch(url string) (*Feed, error) {
-	return FetchByClient(url, client)
+	return fetchWithClient(url)
 }
 
-func FetchByClient(url string, client *http.Client) (*Feed, error) {
-	fetchFunc := func() (resp *http.Response, err error) {
-		client.Timeout = time.Second * 10
-		return client.Get(url)
-	}
-	return FetchByFunc(fetchFunc, url)
-}
-
-func FetchByFunc(fetchFunc FetchFunc, url string) (*Feed, error) {
-	resp, err := fetchFunc()
+func fetchWithClient(url string) (*Feed, error) {
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}

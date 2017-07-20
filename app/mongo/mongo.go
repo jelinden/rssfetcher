@@ -133,7 +133,7 @@ func getNewsFeeds(feeds []domain.Feed, c chan *feedStruct) {
 func getNewsFeed(feeds []domain.Feed, c chan *feedStruct, i int) {
 	item, err := rss.Fetch(feeds[i].URL)
 	if err != nil {
-		log.Println(err)
+		log.Println("err", feeds[i].URL, err)
 		c <- nil
 	} else {
 		items := feedStruct{RSSFeed: feeds[i], Item: *item}
