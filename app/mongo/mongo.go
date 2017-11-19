@@ -140,6 +140,7 @@ func getNewsFeed(feeds []domain.Feed, c chan *feedStruct, i int) {
 		c <- &items
 	}
 }
+
 func saveNewsItems(items rss.Feed, feed domain.Feed, collection mgo.Collection) {
 	for k, item := range items.Items {
 		if k > 4 {
@@ -160,8 +161,9 @@ func saveNewsItems(items rss.Feed, feed domain.Feed, collection mgo.Collection) 
 				item.Date = time.Now()
 			}
 			result := rss.Item{}
-			if len(item.GUID) != 0 {
-				err := collection.Find(bson.M{"rssLink": item.Link}).Select(bson.M{"_id": 1, "pubDate": 1, "clicks": 1}).One(&result)
+			if len(item.GUID) > 3 {
+				item.GUID = getGUID(item.GUID)
+				err := collection.Find(bson.M{"rssGuid": item.GUID}).Select(bson.M{"_id": 1, "pubDate": 1, "clicks": 1}).One(&result)
 				if err == nil && result.ID.Valid() {
 					item.ID = result.ID
 					if result.Date.Unix() > 0 {
@@ -183,6 +185,10 @@ func saveNewsItems(items rss.Feed, feed domain.Feed, collection mgo.Collection) 
 			}
 		}
 	}
+}
+
+func getGUID(guid string) string {
+	return strings.Replace(strings.Replace(guid, "http://", "", 1), "https://", "", 1)
 }
 
 func GetFeeds() []domain.Feed {
