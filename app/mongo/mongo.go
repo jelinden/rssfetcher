@@ -104,9 +104,6 @@ type feedStruct struct {
 
 func GetNews(feeds []domain.Feed) {
 	log.Println("getting news")
-	m := mongoSession.Clone()
-	defer m.Close()
-	collection := m.DB("news").C("newscollection")
 	c := make(chan *feedStruct)
 	go getNewsFeeds(feeds, c)
 	counter := 0
@@ -114,7 +111,7 @@ func GetNews(feeds []domain.Feed) {
 		counter++
 		if i != nil {
 			t := time.Now()
-			saveNewsItems(i.Item, i.RSSFeed, *collection)
+			saveNewsItems(i.Item, i.RSSFeed)
 			log.Println("feed "+i.RSSFeed.Name+" "+i.RSSFeed.Category.Name, time.Now().Sub(t).Seconds())
 		}
 		if counter == len(feeds) {
@@ -141,7 +138,10 @@ func getNewsFeed(feeds []domain.Feed, c chan *feedStruct, i int) {
 	}
 }
 
-func saveNewsItems(items rss.Feed, feed domain.Feed, collection mgo.Collection) {
+func saveNewsItems(items rss.Feed, feed domain.Feed) {
+	m := mongoSession.Clone()
+	defer m.Close()
+	collection := m.DB("news").C("newscollection")
 	for k, item := range items.Items {
 		if k > 4 {
 			break
