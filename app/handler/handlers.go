@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/jelinden/rssfetcher/app/domain"
 	"github.com/jelinden/rssfetcher/app/mongo"
@@ -15,7 +16,7 @@ import (
 var templates = template.Must(template.ParseGlob("public/tmpl/*"))
 
 func ViewHandler(w http.ResponseWriter, r *http.Request) {
-	feedList := mongo.GetFeeds()
+	feedList := mongo.GetFeeds(false)
 	categoryList := mongo.GetCategories()
 	subCategoryList := mongo.GetSubCategories()
 	viewPage := domain.ViewPage{}
@@ -32,10 +33,26 @@ func EditHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		feed = &domain.Feed{ID: bson.NewObjectId()}
 	}
+	if feed.SubCategory == nil {
+		feed.SubCategory = &rss.SubCategory{SubCategory: ""}
+	}
 	editPage.Feed = *feed
 	editPage.Categories = mongo.GetCategories()
 	editPage.SubCategories = mongo.GetSubCategories()
 	renderTemplate(w, "edit", editPage)
+}
+
+func RemoveHandler(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/delete/")
+	feed, err := mongo.GetFeed(id)
+	if err != nil {
+		log.Println("error getting", id, err)
+	} else {
+		feed.Removed = true
+		log.Println("saving", feed.ID.Hex(), feed.Name, feed.Removed)
+		mongo.SaveFeedItem(*feed)
+	}
+	http.Redirect(w, r, "/view/", http.StatusFound)
 }
 
 func SaveHandler(w http.ResponseWriter, r *http.Request) {

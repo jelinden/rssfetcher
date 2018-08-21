@@ -1,53 +1,68 @@
 {{define "view"}}
 <html>
-    <head></head>
-    <body>
-        <h1>Feed list</h1>
 
-        <div>
-            <p><a href="/edit">Add a new feed</a></p>
-        </div>
+<head></head>
 
-        <div>
-            {{range .Feeds}}
-                <div>{{.Name}} {{.Category.Name}} [<a href="/edit/{{.ID.Hex}}">edit</a>] {{.URL}}<div>
-            {{end}}
-        </div>
+<body>
+    <h1>Feed list</h1>
 
-        <div>
-            <h2>Categories</h2>
-            {{range .Categories}}
-                <div>{{.Name}}<div>
-            {{end}}
-        </div>
-        <div>
-            <h2>Add a new category</h2>
-            <form method="POST" action="/save/category">
-                <label for="categoryName">category name</label>
-                <input type="text" id="categoryName" name="categoryName"></input><br/>
-                <label for="enName">english name</label>
-                <input type="text" id="enName" name="enName"></input><br/>
-                <label for="styleName">style name</label>
-                <input type="text" id="styleName" name="styleName"></input><br/>
-                <input type="submit" value="save"></input>
-            </form>
-        </div>
-        <div>
-            <h2>Sub categories</h2>
-            {{range .SubCategories}}
-                <div>{{.SubCategory}}<div>
-            {{end}}
-        </div>
-        <div>
-            <h2>Add a new sub category</h2>
-            <form method="POST" action="/save/subcategory">
-                <label for="subCategory">subcategory name</label>
-                <input type="text" id="subCategory" name="subCategory"></input><br/>
-                <label for="enName">english name</label>
-                <input type="text" id="enName" name="enName"></input><br/>
-                <input type="submit" value="save"></input>
-            </form>
-        </div>
-    </body>
+    <div>
+        <p>
+            <a href="/edit">Add a new feed</a>
+        </p>
+    </div>
+
+    <div>
+        {{range .Feeds}}
+        <div>{{.Name}} {{.Category.Name}} [
+            <a href="/edit/{{.ID.Hex}}">edit</a>] {{.URL}} [
+            <a href="/delete/{{.ID.Hex}}">delete</a>] removed: {{.Removed}}
+            <div>
+                {{end}}
+            </div>
+
+            <div>
+                <h2>Categories</h2>
+                {{range .Categories}}
+                <div>{{.Name}}
+                    <div>
+                        {{end}}
+                    </div>
+                    <div>
+                        <h2>Add a new category</h2>
+                        <form method="POST" action="/save/category">
+                            <label for="categoryName">category name</label>
+                            <input type="text" id="categoryName" name="categoryName"></input>
+                            <br/>
+                            <label for="enName">english name</label>
+                            <input type="text" id="enName" name="enName"></input>
+                            <br/>
+                            <label for="styleName">style name</label>
+                            <input type="text" id="styleName" name="styleName"></input>
+                            <br/>
+                            <input type="submit" value="save"></input>
+                        </form>
+                    </div>
+                    <div>
+                        <h2>Sub categories</h2>
+                        {{range .SubCategories}}
+                        <div>{{.SubCategory}}
+                            <div>
+                                {{end}}
+                            </div>
+                            <div>
+                                <h2>Add a new sub category</h2>
+                                <form method="POST" action="/save/subcategory">
+                                    <label for="subCategory">subcategory name</label>
+                                    <input type="text" id="subCategory" name="subCategory"></input>
+                                    <br/>
+                                    <label for="enName">english name</label>
+                                    <input type="text" id="enName" name="enName"></input>
+                                    <br/>
+                                    <input type="submit" value="save"></input>
+                                </form>
+                            </div>
+</body>
+
 </html>
 {{end}}

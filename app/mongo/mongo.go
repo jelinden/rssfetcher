@@ -27,6 +27,22 @@ func InitMongo(mongoAddress string) {
 	mongoSession.SetMode(mgo.Monotonic, true)
 }
 
+func SaveFeedItem(feed domain.Feed) {
+	if feed.SubCategory.ID == "" {
+		feed.SubCategory = nil
+	}
+	m := mongoSession.Clone()
+	defer m.Close()
+	c := m.DB("news").C("feedcollection")
+	if feed.ID.Valid() {
+		log.Println("url: "+feed.URL, "updating, ID:", feed.ID.Hex())
+		err := c.UpdateId(feed.ID, feed)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+}
+
 func SaveFeed(feed *domain.Feed, lang string, name string, url string, siteURL string, category rss.Category, subCategory rss.SubCategory) {
 	m := mongoSession.Clone()
 	defer m.Close()
@@ -39,9 +55,12 @@ func SaveFeed(feed *domain.Feed, lang string, name string, url string, siteURL s
 			URL:         url,
 			SiteURL:     siteURL,
 			Category:    category,
-			SubCategory: subCategory,
+			SubCategory: &subCategory,
 			Language:    lang}
-		c.UpdateId(feed.ID, feed)
+		err := c.UpdateId(feed.ID, feed)
+		if err != nil {
+			log.Println(err)
+		}
 	} else {
 		log.Println("inserting", url, "ids", category.ID, subCategory.ID)
 		feed := &domain.Feed{
@@ -50,10 +69,12 @@ func SaveFeed(feed *domain.Feed, lang string, name string, url string, siteURL s
 			URL:         url,
 			SiteURL:     siteURL,
 			Category:    category,
-			SubCategory: subCategory,
+			SubCategory: &subCategory,
 			Language:    lang}
 		err := c.Insert(&feed)
-		log.Println("insert failed", err)
+		if err != nil {
+			log.Println("insert failed", err)
+		}
 	}
 }
 
@@ -112,7 +133,7 @@ func GetNews(feeds []domain.Feed) {
 		if i != nil {
 			t := time.Now()
 			saveNewsItems(i.Item, i.RSSFeed)
-			log.Println("feed "+i.RSSFeed.Name+" "+i.RSSFeed.Category.Name, time.Now().Sub(t).Seconds())
+			log.Println("feed", i.RSSFeed.Name, i.RSSFeed.Category.Name, time.Now().Sub(t).Seconds(), "s")
 		}
 		if counter == len(feeds) {
 			close(c)
@@ -153,7 +174,11 @@ func saveNewsItems(items rss.Feed, feed domain.Feed) {
 		if item.Title != "" && item.Link != "" {
 			item.Language = feed.Language
 			item.Category = feed.Category
-			item.SubCategory = feed.SubCategory
+			if feed.SubCategory.ID != "" {
+				item.SubCategory = feed.SubCategory
+			} else {
+				item.SubCategory = nil
+			}
 			item.Source = feed.Name
 			item.Language = feed.Language
 
@@ -181,7 +206,6 @@ func saveNewsItems(items rss.Feed, feed domain.Feed) {
 						log.Println("inserting rss failed " + err3.Error())
 					}
 				}
-				//fmt.Println("  " + item.Date.String() + " " + item.Title)
 			}
 		}
 	}
@@ -191,12 +215,19 @@ func getGUID(guid string) string {
 	return strings.Replace(strings.Replace(guid, "http://", "", 1), "https://", "", 1)
 }
 
-func GetFeeds() []domain.Feed {
+func GetFeeds(args ...bool) []domain.Feed {
+	var query = make(map[string]interface{})
+	if len(args) == 1 && args[0] == true {
+		query = bson.M{"removed": bson.M{"$ne": true}}
+	} else {
+		query = bson.M{}
+	}
 	m := mongoSession.Clone()
 	defer m.Close()
 	c := m.DB("news").C("feedcollection")
 	feedList := []domain.Feed{}
-	_ = c.Find(bson.M{}).All(&feedList)
+
+	_ = c.Find(query).All(&feedList)
 	return feedList
 }
 

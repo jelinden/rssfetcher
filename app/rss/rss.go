@@ -91,7 +91,7 @@ type Item struct {
 	Read        bool          `json:"read" bson:"read"`
 	Enclosure   Enclosure     `json:"enclosure" bson:"enclosure"`
 	Category    Category      `json:"category" bson:"category"`
-	SubCategory SubCategory   `json:"subCategory" bson:"subCategory"`
+	SubCategory *SubCategory  `json:"subCategory" bson:"subCategory"`
 	Language    string        `json:"language" bson:"language"`
 	Source      string        `json:"rssSource" bson:"rssSource"`
 	Clicks      int           `json:"clicks" bson:"clicks"`

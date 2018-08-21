@@ -6,13 +6,14 @@ import (
 )
 
 type Feed struct {
-	ID          bson.ObjectId   `json:"id" bson:"_id"`
-	Name        string          `json:"feedTitle" bson:"feedTitle"`
-	URL         string          `json:"url" bson:"url"`
-	SiteURL     string          `json:"siteUrl" bson:"siteUrl"`
-	Category    rss.Category    `json:"category" bson:"category"`
-	SubCategory rss.SubCategory `json:"subCategory" bson:"subCategory"`
-	Language    string          `json:"language" bson:"language"`
+	ID          bson.ObjectId    `json:"id" bson:"_id"`
+	Name        string           `json:"feedTitle" bson:"feedTitle"`
+	URL         string           `json:"url" bson:"url"`
+	SiteURL     string           `json:"siteUrl" bson:"siteUrl"`
+	Category    rss.Category     `json:"category" bson:"category"`
+	SubCategory *rss.SubCategory `json:"subCategory" bson:"subCategory"`
+	Language    string           `json:"language" bson:"language"`
+	Removed     bool             `json:"removed" bson:"removed"`
 }
 
 type ViewPage struct {
