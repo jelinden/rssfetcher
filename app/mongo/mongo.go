@@ -128,10 +128,10 @@ func GetNews(feeds []domain.Feed) {
 	c := make(chan *feedStruct)
 	go getNewsFeeds(feeds, c)
 	counter := 0
+	t := time.Now()
 	for i := range c {
 		counter++
 		if i != nil {
-			t := time.Now()
 			saveNewsItems(i.Item, i.RSSFeed)
 			log.Println("feed", i.RSSFeed.Name, i.RSSFeed.Category.Name, time.Now().Sub(t).Seconds(), "s")
 		}
