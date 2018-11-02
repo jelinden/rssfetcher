@@ -14,6 +14,7 @@ func parseTime(s string) (time.Time, error) {
 		"Mon, _2 Jan 2006 15:04:05 -0700",
 		"Mon, _2 Jan 2006 15:04:05",
 		"_2 Jan 2006 15:04:05 -0700",
+		"2006-01-02 15:04:05",
 		time.ANSIC,
 		time.UnixDate,
 		time.RubyDate,
