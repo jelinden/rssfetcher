@@ -1,0 +1,15 @@
+# github.com/PuerkitoBio/goquery v0.0.0-20170324135448-ed7d758e9a34
+github.com/PuerkitoBio/goquery
+# github.com/andybalholm/cascadia v0.0.0-20161224141413-349dd0209470
+github.com/andybalholm/cascadia
+# github.com/axgle/mahonia v0.0.0-20151019004008-c528b747d92d
+github.com/axgle/mahonia
+# golang.org/x/net v0.0.0-20160618003117-1961d9def2b2
+golang.org/x/net/html
+golang.org/x/net/html/atom
+# gopkg.in/mgo.v2 v2.0.0-20160818020120-3f83fa500528
+gopkg.in/mgo.v2/bson
+gopkg.in/mgo.v2
+gopkg.in/mgo.v2/internal/json
+gopkg.in/mgo.v2/internal/sasl
+gopkg.in/mgo.v2/internal/scram
