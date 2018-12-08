@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 	"net/http"
 	"regexp"
 	"time"
@@ -29,7 +30,8 @@ func main() {
 	http.HandleFunc("/save/category", makeHandler(handler.SaveCategoryHandler))
 	http.HandleFunc("/save/subcategory", makeHandler(handler.SaveSubCategoryHandler))
 
-	http.ListenAndServe(":9200", nil)
+	log.Println("Starting up at port 9200")
+	log.Fatal(http.ListenAndServe(":9200", nil))
 }
 
 func makeHandler(fn func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
