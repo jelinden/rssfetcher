@@ -2,18 +2,18 @@ package domain
 
 import (
 	"github.com/jelinden/rssfetcher/app/rss"
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type Feed struct {
-	ID          bson.ObjectId    `json:"id" bson:"_id"`
-	Name        string           `json:"feedTitle" bson:"feedTitle"`
-	URL         string           `json:"url" bson:"url"`
-	SiteURL     string           `json:"siteUrl" bson:"siteUrl"`
-	Category    rss.Category     `json:"category" bson:"category"`
-	SubCategory *rss.SubCategory `json:"subCategory" bson:"subCategory"`
-	Language    string           `json:"language" bson:"language"`
-	Removed     bool             `json:"removed" bson:"removed"`
+	ID          primitive.ObjectID `json:"id" bson:"_id"`
+	Name        string             `json:"feedTitle" bson:"feedTitle,omitempty"`
+	URL         string             `json:"url" bson:"url,omitempty"`
+	SiteURL     string             `json:"siteUrl" bson:"siteUrl,omitempty"`
+	Category    rss.Category       `json:"category" bson:"category,omitempty"`
+	SubCategory *rss.SubCategory   `json:"subCategory" bson:"subCategory,omitempty"`
+	Language    string             `json:"language" bson:"language,omitempty"`
+	Removed     bool               `json:"removed" bson:"removed,omitempty"`
 }
 
 type ViewPage struct {

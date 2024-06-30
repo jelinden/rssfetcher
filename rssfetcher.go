@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"net/http"
@@ -20,7 +21,10 @@ var (
 
 func main() {
 	flag.Parse()
-	mongo.InitMongo(*mongoAddress)
+	mongoRepository := mongo.MongoRepository{}
+	mongoRepository.Client = mongo.InitMongoClient(*mongoAddress)
+	mongo.MongoClient = mongoRepository
+	defer mongo.MongoClient.Client.Disconnect(context.Background())
 	runFeedFetcher(*env)
 	flag.Parse()
 	http.HandleFunc("/view/", makeHandler(handler.ViewHandler))

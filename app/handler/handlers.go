@@ -10,7 +10,7 @@ import (
 	"github.com/jelinden/rssfetcher/app/domain"
 	"github.com/jelinden/rssfetcher/app/mongo"
 	"github.com/jelinden/rssfetcher/app/rss"
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 var templates = template.Must(template.ParseGlob("public/tmpl/*"))
@@ -31,7 +31,7 @@ func EditHandler(w http.ResponseWriter, r *http.Request) {
 	feed, err := mongo.GetFeed(r.URL.Path[6:])
 	editPage := domain.EditPage{}
 	if err != nil {
-		feed = &domain.Feed{ID: bson.NewObjectId()}
+		feed = &domain.Feed{ID: primitive.NewObjectID()}
 	}
 	if feed.SubCategory == nil {
 		feed.SubCategory = &rss.SubCategory{SubCategory: ""}
@@ -62,12 +62,12 @@ func SaveHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := r.FormValue("language")
 	category := mongo.GetCategory(r.FormValue("category"))
-	if !category.ID.Valid() {
-		category.ID = bson.NewObjectId()
+	if category.ID.IsZero() {
+		category.ID = primitive.NewObjectID()
 	}
 	subCategory := mongo.GetSubCategory(r.FormValue("subCategory"))
-	if !subCategory.ID.Valid() {
-		subCategory.ID = bson.NewObjectId()
+	if subCategory.ID.IsZero() {
+		subCategory.ID = primitive.NewObjectID()
 	}
 	name := r.FormValue("name")
 	url := r.FormValue("url")
@@ -77,7 +77,7 @@ func SaveHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveCategoryHandler(w http.ResponseWriter, r *http.Request) {
-	category := rss.Category{ID: bson.NewObjectId(),
+	category := rss.Category{ID: primitive.NewObjectID(),
 		Name:      r.FormValue("categoryName"),
 		EnName:    r.FormValue("enName"),
 		StyleName: r.FormValue("styleName")}
@@ -86,7 +86,7 @@ func SaveCategoryHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveSubCategoryHandler(w http.ResponseWriter, r *http.Request) {
-	subCategory := rss.SubCategory{ID: bson.NewObjectId(),
+	subCategory := rss.SubCategory{ID: primitive.NewObjectID(),
 		SubCategory: r.FormValue("subCategory"),
 	}
 	mongo.SaveSubCategory(subCategory)
