@@ -1,4 +1,4 @@
-#!bin/bash
+#!/bin/bash
 go build && killall rssfetcher
 sleep 1
 go build rssfetcher.go && 
