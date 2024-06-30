@@ -44,14 +44,10 @@ func SaveFeedItem(feed domain.Feed) {
 	c := MongoClient.Client.Database("news").Collection("feedcollection")
 
 	log.Println("url: "+feed.URL, "updating, ID:", feed.ID.Hex())
-	var bm []byte
-	var err error
-	if bm, err = bson.Marshal(feed); err != nil {
-		log.Printf("can't marshal: %s", err)
-	}
-	_, err = c.UpdateOne(context.Background(),
+
+	_, err := c.UpdateOne(context.Background(),
 		bson.D{{Key: "_id", Value: feed.ID}},
-		bson.D{{Key: "$set", Value: bm}})
+		bson.D{{Key: "$set", Value: feed}})
 	if err != nil {
 		log.Println(err)
 	}
@@ -71,14 +67,9 @@ func SaveFeed(feed *domain.Feed, lang string, name string, url string, siteURL s
 			SubCategory: &subCategory,
 			Language:    lang}
 
-		var bm []byte
-		var err error
-		if bm, err = bson.Marshal(feed); err != nil {
-			log.Printf("can't marshal: %s", err)
-		}
-		_, err = c.UpdateOne(context.Background(),
+		_, err := c.UpdateOne(context.Background(),
 			bson.D{{Key: "_id", Value: feed.ID}},
-			bson.D{{Key: "$set", Value: bm}})
+			bson.D{{Key: "$set", Value: feed}})
 		if err != nil {
 			log.Println(err)
 		}
