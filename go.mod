@@ -7,7 +7,7 @@ toolchain go1.23.4
 require (
 	github.com/PuerkitoBio/goquery v1.10.1
 	github.com/axgle/mahonia v0.0.0-20180208002826-3358181d7394
-	go.mongodb.org/mongo-driver v1.17.2
+	go.mongodb.org/mongo-driver v1.17.7
 )
 
 require (
