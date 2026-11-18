@@ -434,3 +434,24 @@ only used for an address that really is private.
   convenience of `t.Skipf` without a mongod is exactly what makes CI meaningless.
 * Live evidence for the parts a unit test cannot reach (real publishers, real
   conditional requests, the duplicate subscription) is in the finding entries above.
+
+## Commit split
+
+The work is committed in dependency order, one layer per commit:
+
+```
+b4d62fb main: configuration, fetch lifecycle, and no credentials in the tree
+68218e6 handler: an admin UI that can be logged out of, and tested
+805675e mongo: a context aware store instead of package globals
+552f6c4 domain: pin down the URL validation boundary and test it
+7ff52ff rss: correct, bounded and safe feed parsing and fetching
+0e6b72e auth: scrypt password hashing, session tokens and CSRF primitives
+5548e08 deps: mongo-driver v2, vendor tree, CI workflow
+```
+
+The layers were rewritten against each other, so this is not a bisection: the old
+handler still referenced the v1 driver until `68218e6`, and `main` until `b4d62fb`.
+`./app/...` builds from `68218e6` and the whole tree from `b4d62fb`, which is where
+the 165 tests, `go vet` and `gofmt` are clean. Splitting further (each fix in its
+own commit) would have meant interleaving the five packages rather than finishing
+them one at a time.
