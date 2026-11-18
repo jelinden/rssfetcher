@@ -1,92 +1,37 @@
 package rss
 
 import (
-	"bytes"
 	"encoding/xml"
 	"fmt"
-	"strings"
-
-	"github.com/PuerkitoBio/goquery"
 )
 
 func parseRSS1(data []byte) (*Feed, error) {
 	feed := rss1_0Feed{}
-	p := xml.NewDecoder(bytes.NewReader(data))
-	p.CharsetReader = charsetReader
-	err := p.Decode(&feed)
-	if err != nil {
+	if err := decodeXML(data, &feed); err != nil {
 		return nil, err
 	}
 	if feed.Channel == nil {
-		return nil, fmt.Errorf("Error: no channel found in %q.", string(data))
+		return nil, fmt.Errorf("rss: no channel found in %s", snippet(data))
 	}
 
 	channel := feed.Channel
+	out := newFeed(channel.Title, channel.Description, channel.Link, channel.Image.Image())
 
-	out := new(Feed)
-	out.Title = channel.Title
-	out.Description = channel.Description
-	out.Link = channel.Link
-	out.Image = channel.Image.Image()
-
-	if feed.Items == nil {
-		return nil, fmt.Errorf("Error: no feeds found in %q.", string(data))
-	}
-
-	out.Items = make([]*Item, 0, len(feed.Items))
-	out.ItemMap = make(map[string]struct{})
-
-	// Process items.
 	for _, item := range feed.Items {
-
-		if item.GUID == "" {
-			if item.Link == "" {
-				fmt.Printf("Warning: Item %q has no ID or link and will be ignored.\n", item.Title)
-				continue
-			}
-			item.GUID = item.Link
+		if len(out.Items) >= itemFetchLimit {
+			break
 		}
-
-		next := new(Item)
-		next.Title = item.Title
-		next.Content = item.Content
-		next.Link = item.Link
-		if item.Date != "" {
-			next.Date, err = parseTime(item.Date)
-			if err != nil {
-				return nil, err
-			}
-		} else if item.PubDate != "" {
-			next.Date, err = parseTime(item.PubDate)
-			if err != nil {
-				return nil, err
-			}
+		content := firstNonEmpty(item.ContentEncoded, item.Content)
+		next := &Item{
+			Title:     item.Title,
+			Content:   content,
+			Link:      item.Link,
+			Date:      parseDate(item.Date, item.PubDate),
+			GUID:      guidOrLink(item.GUID, item.Link),
+			Read:      false,
+			Enclosure: enclosure(item.Enclosure, mediaURLs(item.Media), content, channel.Image.Url),
 		}
-		next.GUID = item.GUID
-		next.Read = false
-		if item.Media != nil && item.Media[len(item.Media)-1].Url != "" {
-			enclosure := Enclosure{}
-			enclosure.Url = item.Media[len(item.Media)-1].Url
-			next.Enclosure = enclosure
-		} else if strings.Contains(item.Content, "<img") {
-			doc, err := goquery.NewDocumentFromReader(strings.NewReader(item.Content))
-			if err != nil {
-				fmt.Println(err)
-			}
-			imgSrc, _ := doc.Find("img").First().Attr("src")
-			enclosure := Enclosure{}
-			enclosure.Url = imgSrc
-			next.Enclosure = enclosure
-
-		}
-		if _, ok := out.ItemMap[next.GUID]; ok {
-			fmt.Printf("Warning: Item %q has duplicate ID.\n", next.Title)
-			continue
-		}
-
-		out.Items = append(out.Items, next)
-		out.ItemMap[next.GUID] = struct{}{}
-		out.Unread++
+		appendItem(out, next)
 	}
 
 	return out, nil
@@ -110,15 +55,16 @@ type rss1_0Channel struct {
 }
 
 type rss1_0Item struct {
-	XMLName   xml.Name  `xml:"item"`
-	Title     string    `xml:"title"`
-	Content   string    `xml:"description"`
-	Link      string    `xml:"link"`
-	PubDate   string    `xml:"pubDate"`
-	Date      string    `xml:"date"`
-	GUID      string    `xml:"guid"`
-	Enclosure Enclosure `xml:"enclosure"`
-	Media     []Media   `xml:"http://search.yahoo.com/mrss/ content"`
+	XMLName        xml.Name  `xml:"item"`
+	Title          string    `xml:"title"`
+	Content        string    `xml:"description"`
+	ContentEncoded string    `xml:"http://purl.org/rss/1.0/modules/content/ encoded"`
+	Link           string    `xml:"link"`
+	PubDate        string    `xml:"pubDate"`
+	Date           string    `xml:"date"`
+	GUID           string    `xml:"guid"`
+	Enclosure      Enclosure `xml:"enclosure"`
+	Media          []Media   `xml:"http://search.yahoo.com/mrss/ content"`
 }
 
 type rss1_0Image struct {
@@ -130,10 +76,10 @@ type rss1_0Image struct {
 }
 
 func (i *rss1_0Image) Image() *Image {
-	out := new(Image)
-	out.Title = i.Title
-	out.Url = i.Url
-	out.Height = uint32(i.Height)
-	out.Width = uint32(i.Width)
-	return out
+	return &Image{
+		Title:  i.Title,
+		Url:    i.Url,
+		Height: uint32(i.Height),
+		Width:  uint32(i.Width),
+	}
 }

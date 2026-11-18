@@ -1,141 +1,110 @@
 package rss
 
 import (
-	"bytes"
 	"encoding/xml"
-	"fmt"
-	"strings"
 	"time"
-
-	"github.com/PuerkitoBio/goquery"
 )
 
 func parseAtom(data []byte) (*Feed, error) {
 	feed := atomFeed{}
-	p := xml.NewDecoder(bytes.NewReader(data))
-	p.CharsetReader = charsetReader
-	err := p.Decode(&feed)
-	if err != nil {
+	if err := decodeXML(data, &feed); err != nil {
 		return nil, err
 	}
 
-	out := new(Feed)
-	out.Title = feed.Title
-	out.Description = feed.Description
-	out.Link = feed.Link.Href
-	out.Image = feed.Image.Image()
+	out := newFeed(feed.Title, feed.Description, alternateLink(feed.Links), feed.channelImage())
 	out.Refresh = time.Now().Add(10 * time.Minute)
 
-	if feed.Items == nil {
-		return nil, fmt.Errorf("Error: no feeds found in %q.", string(data))
-	}
-
-	out.Items = make([]*Item, 0, len(feed.Items))
-	out.ItemMap = make(map[string]struct{})
-	// Process items.
-	for i, item := range feed.Items {
-		if i > 5 {
+	for _, item := range feed.Items {
+		if len(out.Items) >= itemFetchLimit {
 			break
 		}
-		next := new(Item)
-		next.Title = item.Title
-		if item.Content != "" {
-			next.Content = item.Content
-		} else {
-			next.Content = item.Content3
+		// <content> is the entry body, <summary> the teaser: preferring the
+		// summary throws the article away (and is the inverse of the RSS 2.0
+		// rule, where content:encoded wins over description).
+		content := firstNonEmpty(item.Content3, item.Content, item.InnerXML)
+		link := alternateLink(item.Links)
+		next := &Item{
+			Title:     item.Title,
+			Content:   content,
+			Link:      link,
+			Date:      parseDate(item.Date, item.Updated),
+			GUID:      guidOrLink(item.GUID, link),
+			Read:      false,
+			Enclosure: enclosure(item.Enclosure, mediaURLs(item.Media, item.MediaContent), content, imageURL(out.Image)),
 		}
-
-		next.Link = item.Link.Href
-		if item.Date != "" {
-			next.Date, err = parseTime(item.Date)
-			if err != nil {
-				return nil, err
-			}
-		}
-		next.GUID = item.GUID
-		next.Read = false
-		if item.Enclosure.Url != "" {
-			next.Enclosure = item.Enclosure
-		} else if item.Media != nil && item.Media[len(item.Media)-1].Url != "" {
-			enclosure := Enclosure{}
-			enclosure.Url = item.Media[len(item.Media)-1].Url
-			next.Enclosure = enclosure
-		} else if strings.Contains(item.Content, "<img") {
-			setEnclosure(item.Content, next)
-		} else if strings.Contains(item.Content2, "<img") {
-			setEnclosure(item.Content2, next)
-		} else if strings.Contains(item.Content3, "<img") {
-			setEnclosure(item.Content3, next)
-		}
-		if next.GUID == "" {
-			fmt.Printf("Warning: Item %q has no ID and will be ignored.\n", next.Title)
-			continue
-		}
-
-		if _, ok := out.ItemMap[next.GUID]; ok {
-			fmt.Printf("Warning: Item %q has duplicate ID.\n", next.Title)
-			continue
-		}
-
-		out.Items = append(out.Items, next)
-		out.ItemMap[next.GUID] = struct{}{}
-		out.Unread++
+		appendItem(out, next)
 	}
 
 	return out, nil
 }
 
-func setEnclosure(content string, next *Item) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(content))
-	if err != nil {
-		fmt.Println(err)
+// alternateLink returns the "alternate" (i.e. human readable) link of an atom
+// feed or entry. Feeds commonly list rel="self" first, so simply taking the
+// first or last <link> yields the wrong URL.
+func alternateLink(links []atomLink) string {
+	fallback := ""
+	for _, l := range links {
+		if l.Href == "" {
+			continue
+		}
+		if l.Rel == "" || l.Rel == "alternate" {
+			return l.Href
+		}
+		if fallback == "" {
+			fallback = l.Href
+		}
 	}
-	imgSrc, _ := doc.Find("img").First().Attr("src")
-	enclosure := Enclosure{}
-	enclosure.Url = imgSrc
-	next.Enclosure = enclosure
+	return fallback
 }
 
 type atomFeed struct {
-	XMLName     xml.Name   `xml:"feed"`
-	Title       string     `xml:"title"`
+	XMLName xml.Name `xml:"feed"`
+	Title   string   `xml:"title"`
+	// Atom has no description element; the subtitle is the closest match.
 	Description string     `xml:"subtitle"`
-	Link        atomLink   `xml:"link"`
-	Image       atomImage  `xml:"image"`
-	Items       []atomItem `xml:"entry"`
-	Updated     string     `xml:"updated"`
+	Links       []atomLink `xml:"link"`
+	// Atom's channel images are <logo> (bigger, for the site) and <icon> (a
+	// favicon). There is no <image> element, which is what the old struct
+	// matched - so the channel image was always empty.
+	Logo    string     `xml:"logo"`
+	Icon    string     `xml:"icon"`
+	Items   []atomItem `xml:"entry"`
+	Updated string     `xml:"updated"`
+}
+
+// channelImage prefers the logo and falls back to the icon.
+func (a atomFeed) channelImage() *Image {
+	url := a.Logo
+	if url == "" {
+		url = a.Icon
+	}
+	if url == "" {
+		return &Image{}
+	}
+	return &Image{Url: url}
 }
 
 type atomItem struct {
-	XMLName   xml.Name  `xml:"entry"`
-	Title     string    `xml:"title"`
-	Content   string    `xml:"summary"`
-	Link      atomLink  `xml:"link"`
-	Date      string    `xml:"published"`
-	GUID      string    `xml:"id"`
-	Enclosure Enclosure `xml:"enclosure"`
-	Content2  string    `xml:",innerxml"`
-	Content3  string    `xml:"content"`
-	Media     []Media   `xml:"http://search.yahoo.com/mrss/ thumbnail"`
-}
-
-type atomImage struct {
-	XMLName xml.Name `xml:"image"`
+	XMLName xml.Name `xml:"entry"`
 	Title   string   `xml:"title"`
-	Url     string   `xml:"url"`
-	Height  int      `xml:"height"`
-	Width   int      `xml:"width"`
+	// Content is the atom summary; Content3 is the full atom:content element.
+	Content   string     `xml:"summary"`
+	Content3  string     `xml:"content"`
+	Links     []atomLink `xml:"link"`
+	Date      string     `xml:"published"`
+	Updated   string     `xml:"updated"`
+	GUID      string     `xml:"id"`
+	Enclosure Enclosure  `xml:"enclosure"`
+	// InnerXML holds the raw entry XML and is used as a last resort to find a
+	// thumbnail image.
+	InnerXML string `xml:",innerxml"`
+	// Both media:thumbnail and media:content carry a url; feeds use one or the
+	// other (or only the latter), so collect both.
+	Media        []Media `xml:"http://search.yahoo.com/mrss/ thumbnail"`
+	MediaContent []Media `xml:"http://search.yahoo.com/mrss/ content"`
 }
 
 type atomLink struct {
 	Href string `xml:"href,attr"`
-}
-
-func (a *atomImage) Image() *Image {
-	out := new(Image)
-	out.Title = a.Title
-	out.Url = a.Url
-	out.Height = uint32(a.Height)
-	out.Width = uint32(a.Width)
-	return out
+	Rel  string `xml:"rel,attr"`
 }
