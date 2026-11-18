@@ -529,6 +529,7 @@ func (s *Store) FetchNews(ctx context.Context, feeds []domain.Feed, fetcher rss.
 	results := s.downloadFeeds(ctx, due, fetcher)
 
 	written := 0
+	unchanged := 0
 	var errs []error
 	failures := 0
 	for _, res := range results {
@@ -541,6 +542,7 @@ func (s *Store) FetchNews(ctx context.Context, feeds []domain.Feed, fetcher rss.
 		if res.notModified {
 			// The publisher said "unchanged": there is nothing to write and the
 			// stored items and validators stay as they are.
+			unchanged++
 			continue
 		}
 		n, err := s.saveNewsItems(ctx, res.feed, res.items)
@@ -551,6 +553,13 @@ func (s *Store) FetchNews(ctx context.Context, feeds []domain.Feed, fetcher rss.
 			continue
 		}
 		written += n
+	}
+
+	if unchanged > 0 {
+		// Worth a line of its own: it is the difference between a cycle that
+		// polled forty feeds and one that was told thirty-nine times that there
+		// was nothing new.
+		log.Printf("mongo: %d of %d feeds answered 304 (unchanged)", unchanged, len(due))
 	}
 
 	// A cycle in which nothing was written and something failed is a failed

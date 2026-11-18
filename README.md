@@ -43,7 +43,10 @@ each cycle is a single pass:
 
 * **Conditional GET.** The `ETag` / `Last-Modified` of the last successful fetch
   are stored on the feed and sent back as `If-None-Match` / `If-Modified-Since`.
-  A `304` costs one small response and writes nothing.
+  A `304` costs one small response and writes nothing - which also means raising
+  `-max-items-per-feed` only takes effect on the next fetch that actually returns
+  a body, and clearing `etag`/`lastModified`/`fetchedAt` on a feed document is how
+  you force one.
 * **Per feed `<ttl>`.** A publisher that says "refresh hourly" is skipped until
   that window has passed, even when `-interval` is shorter (`-honour-feed-ttl
   false` to ignore it).

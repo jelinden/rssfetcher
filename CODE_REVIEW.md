@@ -455,3 +455,73 @@ handler still referenced the v1 driver until `68218e6`, and `main` until `b4d62f
 the 165 tests, `go vet` and `gofmt` are clean. Splitting further (each fix in its
 own commit) would have meant interleaving the five packages rather than finishing
 them one at a time.
+
+## Live pipeline run (real publisher)
+
+Run against `https://feeds.content.dowjones.io/public/rss/mw_bulletins` (MarketWatch
+breaking news bulletins, RSS 2.0, 10 items, `<ttl>60</ttl>`, weak ETag served by
+CloudFront) with the built binary and a throwaway database. The feed has the two
+shapes that unit fixtures tend to smooth over: **opaque guid**
+(`<guid isPermaLink="false">f1e5b6bf-…</guid>`) and an **empty `<description>`** for
+every item.
+
+Feed subscription created through the UI (login → CSRF → `POST /save/`),
+`-max-items-per-feed=5`:
+
+```
+rssfetcher: 1 feeds, 5 items written in 76ms
+```
+
+* **Newest N (L4).** The publisher lists 10 items at `18:28, 14:48, 14:30, 13:31,
+  11:46, 10:46, 02:01, 01:30, 00:44, 00:12` UTC. The five stored documents are
+  exactly `18:28 … 11:46` - the newest five, not the first five.
+* **Guid namespacing (M2).** `guid = feeds.content.dowjones.io/public/rss/mw_bulletins|f1e5b6bf-093a-4698-bfd7-834ff9aa93e9`: the opaque id is namespaced with the feed URL, so a second publisher using the same uuid cannot collide.
+* **Escapes and offsets.** `&#x2019;` stored as `’` ("Fed’s Waller … ‘shock’ …"),
+  `&amp;` in the link stored as `&`, and `Wed, 18 Nov 2026 18:28:05 GMT` stored as
+  `18:28:05 UTC` - the same instant, not shifted by a local zone.
+* **Validators and `<ttl>` (L2).** `etag = W/"127d-…"`, `ttl = 3600000000000` ns
+  (60 minutes, from `<ttl>60</ttl>`), `fetchedAt` recorded.
+
+Second cycle 25 seconds later, `-honour-feed-ttl=true`:
+
+```
+rssfetcher: 1 of 1 feeds are inside their own <ttl> window, skipping them
+rssfetcher: 1 feeds, 0 items written in 0s
+```
+
+Same database, `-honour-feed-ttl=false`, `-interval 10s`, three cycles:
+
+```
+mongo: 1 of 1 feeds answered 304 (unchanged)
+rssfetcher: 1 feeds, 0 items written in 95ms
+```
+(three times) and `fetchedAt` still `18:48:56`, the value from the last cycle that
+got a body - so the 304 path neither rewrote the items nor touched the validators.
+The publisher does honour the conditional request: `curl -H 'If-None-Match:
+W/"127d-…"'` answers `304`, and a wrong validator answers `200`.
+
+Growth path, after clearing the stored validators and raising the limit to 8:
+
+```
+rssfetcher: 1 feeds, 3 items written in 146ms
+```
+3 new documents on top of the 5, total 8, new ETag stored - the upsert extends the
+set instead of duplicating the five items already there.
+
+Admin UI, same data:
+
+| check | result |
+| --- | --- |
+| `/view/` unauthenticated | `Location: /login/?next=%2Fview%2F` |
+| feed row after login | name, `markets` category tag, `en` language tag, URL link, id |
+| category `enName` | rendered as `markets (Markets)` - the L6 edit actually stored |
+| inline `style=` / `<script>` in the page | 0, so the tightened CSP holds |
+| subscribing the same URL again | `409` with `that feed is already subscribed` |
+| `GET /delete/<id>` | `405` (mutations are POST-only) |
+| `POST /delete/<id>` with the token | `303`, row shows `removed`, `removed=true` in the document |
+| next cycle with only a removed feed | no download at all (nothing logged) |
+
+What this publisher taught us that the fixture could not: its ETag changes on every
+origin refresh because `<lastBuildDate>` is regenerated, so a `200` with an identical
+item set is normal - and the store still reported **0 items written** for that cycle,
+which is the `$set` with nothing changed behaviour the bulk write relies on.
