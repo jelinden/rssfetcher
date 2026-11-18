@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # The mongo suite talks to a real server: without it the tests skip and the
+    # run is green without having checked anything, which is exactly what CI is
+    # here to prevent.
+    services:
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping: 1})'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go' | grep -v '^vendor/' || true))
+          if [ -n "$unformatted" ]; then
+            echo "these files are not gofmt clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: build
+        run: go build -mod=vendor ./...
+
+      - name: test (race, with MongoDB)
+        env:
+          MONGO_TEST_URI: mongodb://127.0.0.1:27017
+        run: go test -mod=vendor -race -count=1 -coverprofile=coverage.out ./...
+
+      # The skip-on-no-mongod behaviour is convenient locally and dangerous in
+      # CI, so a skipped mongo suite fails the build.
+      - name: assert the mongo suite actually ran
+        env:
+          MONGO_TEST_URI: mongodb://127.0.0.1:27017
+        run: |
+          if go test -mod=vendor -count=1 -run TestSaveFeed ./app/mongo/ -v | grep -q 'SKIP'; then
+            echo "the mongo suite skipped; MONGO_TEST_URI is not reachable"
+            exit 1
+          fi
+
+      - name: coverage summary
+        run: go tool cover -func=coverage.out | tail -1

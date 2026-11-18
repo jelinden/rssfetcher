@@ -1,3 +1,8 @@
-rssFetcher
+# Build artefacts (the binary contains no credentials, but keep it out of the
+# index so a locally built one is never committed).
+/rssfetcher
+/rssfetcher.exe
+/rssFetcher
+
 nohup.out
 *.log
