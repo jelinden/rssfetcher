@@ -1,0 +1,41 @@
+{{define "header"}}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{if .Title}}{{.Title}} — {{end}}rssfetcher admin</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body{{with .BodyClass}} class="{{.}}"{{end}}>
+    <main>
+{{if .Username}}
+        <header class="app">
+            <a href="/view/"><strong>rssfetcher</strong></a>
+            <nav>
+                <a href="/view/">feeds</a>
+                <span class="muted">{{.Username}}</span>
+                <form class="inline" method="POST" action="/logout">
+                    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+                    <button type="submit" class="secondary">log out</button>
+                </form>
+            </nav>
+        </header>
+{{end}}
+{{end}}
+
+{{define "footer"}}
+    </main>
+    <footer class="app">
+        rssfetcher — feeds are refreshed in the background.
+    </footer>
+</body>
+</html>
+{{end}}
+
+{{define "messages"}}
+{{- if .Flash}}<p class="flash">{{.Flash}}</p>{{end}}
+{{- if .Err}}<p class="error">{{.Err}}</p>{{end}}
+{{- end}}
+
+{{define "csrf"}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}

@@ -1,108 +1,420 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
+	"github.com/jelinden/rssfetcher/app/auth"
 	"github.com/jelinden/rssfetcher/app/domain"
 	"github.com/jelinden/rssfetcher/app/mongo"
 	"github.com/jelinden/rssfetcher/app/rss"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-var templates = template.Must(template.ParseGlob("public/tmpl/*"))
+// Store is everything the web layer needs from the persistence backend. Having
+// it as an interface (instead of calling package level functions that reach for
+// a global client) is what makes these handlers testable at all.
+type Store interface {
+	Feeds(ctx context.Context, onlyActive bool) ([]domain.Feed, error)
+	Feed(ctx context.Context, id string) (*domain.Feed, error)
+	SaveFeed(ctx context.Context, feed *domain.Feed, in domain.FeedInput) error
+	SaveFeedItem(ctx context.Context, feed domain.Feed) error
+	Categories(ctx context.Context) ([]rss.Category, error)
+	SubCategories(ctx context.Context) ([]rss.SubCategory, error)
+	CategoryByName(ctx context.Context, name string) (rss.Category, error)
+	SubCategoryByName(ctx context.Context, name string) (rss.SubCategory, error)
+	SaveCategory(ctx context.Context, cat rss.Category) error
+	SaveSubCategory(ctx context.Context, sub rss.SubCategory) error
 
-func ViewHandler(w http.ResponseWriter, r *http.Request) {
-	feedList := mongo.GetFeeds(false)
-	categoryList := mongo.GetCategories()
-	subCategoryList := mongo.GetSubCategories()
-	viewPage := domain.ViewPage{}
-	viewPage.Feeds = feedList
-	viewPage.Categories = categoryList
-	viewPage.SubCategories = subCategoryList
-	renderViewTemplate(w, "view", &viewPage)
+	// Credentials and login sessions.
+	VerifyAdminPassword(ctx context.Context, username, password string) (domain.AdminUser, error)
+	CreateSession(ctx context.Context, userID bson.ObjectID, username string, ttl time.Duration) (string, domain.Session, error)
+	// Session resolves a cookie value, sliding the expiry towards ttl. The bool
+	// reports that the deadline moved, so the handler can re-issue the cookie.
+	Session(ctx context.Context, token string, ttl time.Duration) (domain.Session, bool, error)
+	DeleteSession(ctx context.Context, token string) error
+	ChangePassword(ctx context.Context, username, currentPassword, newPassword string) error
 }
 
-func EditHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("editing", r.URL.Path)
-	feed, err := mongo.GetFeed(r.URL.Path[6:])
-	editPage := domain.EditPage{}
-	if err != nil {
-		feed = &domain.Feed{ID: primitive.NewObjectID()}
+// Handler serves the admin UI.
+type Handler struct {
+	store     Store
+	templates *template.Template
+	opts      Options
+	limiter   *loginLimiter
+}
+
+// New builds the admin UI handler. It fails when the process cannot produce
+// cryptographically random bytes: every CSRF token is derived from that secret,
+// and the previous fallback (a timestamp) was guessable by anyone who had seen a
+// log line - which is worse than refusing to start.
+func New(store Store, templates *template.Template, opts Options) (*Handler, error) {
+	opts.normalize()
+	if store == nil {
+		return nil, errors.New("handler: a store is required")
 	}
+	if templates == nil {
+		return nil, errors.New("handler: parsed templates are required")
+	}
+	if opts.AuthSecret == "" {
+		secret, err := auth.NewSecret()
+		if err != nil {
+			return nil, fmt.Errorf("handler: generating the csrf secret: %w", err)
+		}
+		opts.AuthSecret = secret
+	}
+	return &Handler{
+		store:     store,
+		templates: templates,
+		opts:      opts,
+		limiter:   newLoginLimiter(opts.LoginMaxFailures, opts.LoginWindow),
+	}, nil
+}
+
+// Routes wires the handlers. The chain is: resolve the session cookie, bound the
+// request body, enforce CSRF, then dispatch. Every mutating endpoint is
+// restricted to POST, so an <img src="/delete/..."> or a browser prefetch can no
+// longer change state, and everything except the login page and the static
+// assets requires a valid session.
+func (h *Handler) Routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/static/", StaticHandler())
+
+	// Public.
+	mux.HandleFunc("/login/", h.loginRoute)
+	mux.Handle("/logout/", h.method(http.MethodPost, h.Logout))
+
+	// Authenticated.
+	mux.HandleFunc("/", h.notFound)
+	mux.Handle("/view/", h.requireAuth(h.method(http.MethodGet, h.ViewHandler)))
+	mux.Handle("/edit/", h.requireAuth(h.method(http.MethodGet, h.EditHandler)))
+	mux.Handle("/delete/", h.requireAuth(h.method(http.MethodPost, h.RemoveHandler)))
+	mux.Handle("/save/", h.requireAuth(h.method(http.MethodPost, h.SaveHandler)))
+	mux.Handle("/save/category", h.requireAuth(h.method(http.MethodPost, h.SaveCategoryHandler)))
+	mux.Handle("/save/subcategory", h.requireAuth(h.method(http.MethodPost, h.SaveSubCategoryHandler)))
+	mux.Handle("/account/password", h.requireAuth(h.method(http.MethodPost, h.ChangePassword)))
+
+	return h.authenticate(h.limitBody(h.csrf(mux)))
+}
+
+func (h *Handler) loginRoute(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodPost:
+		h.LoginPage(w, r)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "GET or POST required", http.StatusMethodNotAllowed)
+	}
+}
+
+// limitBody bounds the request body we are willing to buffer before anything
+// (including the CSRF check) reads it.
+func (h *Handler) limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			r.Body = http.MaxBytesReader(w, r.Body, h.opts.MaxFormBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// page builds the shared template fields: title, signed in user and the CSRF
+// token every form has to carry.
+func (h *Handler) page(w http.ResponseWriter, r *http.Request, title string) domain.Page {
+	page := domain.Page{Title: title, CSRF: h.csrfToken(w, r)}
+	if session, ok := sessionFrom(r.Context()); ok {
+		page.Username = session.Username
+	}
+	return page
+}
+
+func (h *Handler) notFound(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	http.Redirect(w, r, "/view/", http.StatusFound)
+}
+
+// method restricts an endpoint to one HTTP method, which together with the CSRF
+// check keeps state changes away from GET requests.
+func (h *Handler) method(method string, next http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != method {
+			w.Header().Set("Allow", method)
+			http.Error(w, method+" required", http.StatusMethodNotAllowed)
+			return
+		}
+		next(w, r)
+	})
+}
+
+func (h *Handler) ViewHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	viewPage := domain.ViewPage{Page: h.page(w, r, "Feeds")}
+
+	var err error
+	if viewPage.Feeds, err = h.store.Feeds(ctx, false); err != nil {
+		h.fail(w, r, "loading feeds", err)
+		return
+	}
+	if viewPage.Categories, err = h.store.Categories(ctx); err != nil {
+		h.fail(w, r, "loading categories", err)
+		return
+	}
+	if viewPage.SubCategories, err = h.store.SubCategories(ctx); err != nil {
+		h.fail(w, r, "loading sub categories", err)
+		return
+	}
+	if flash := r.URL.Query().Get("flash"); flash != "" {
+		viewPage.Flash = flash
+	}
+	h.render(w, "view", &viewPage)
+}
+
+func (h *Handler) EditHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := idFromPath(r.URL.Path)
+	feed, err := h.store.Feed(ctx, id)
+	switch {
+	case errors.Is(err, mongo.ErrNotFound), errors.Is(err, mongo.ErrInvalidID):
+		// New feed: pre-fill with a fresh id so the form posts to /save/<new>.
+		feed = &domain.Feed{ID: newObjectID()}
+	case err != nil:
+		h.fail(w, r, "loading feed", err)
+		return
+	}
+	// Feeds stored without a sub category have a nil pointer here; the template
+	// dereferences it, which used to panic.
+	feed.SubCategory = feed.EffectiveSubCategory()
 	if feed.SubCategory == nil {
-		feed.SubCategory = &rss.SubCategory{SubCategory: ""}
+		feed.SubCategory = &rss.SubCategory{}
 	}
-	editPage.Feed = *feed
-	editPage.Categories = mongo.GetCategories()
-	editPage.SubCategories = mongo.GetSubCategories()
-	renderTemplate(w, "edit", editPage)
+
+	page := domain.EditPage{Page: h.page(w, r, "Edit feed"), Feed: *feed}
+	if page.Categories, err = h.store.Categories(ctx); err != nil {
+		h.fail(w, r, "loading categories", err)
+		return
+	}
+	if page.SubCategories, err = h.store.SubCategories(ctx); err != nil {
+		h.fail(w, r, "loading sub categories", err)
+		return
+	}
+	h.render(w, "edit", page)
 }
 
-func RemoveHandler(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/delete/")
-	feed, err := mongo.GetFeed(id)
-	if err != nil {
-		log.Println("error getting", id, err)
-	} else {
-		feed.Removed = true
-		log.Println("saving", feed.ID.Hex(), feed.Name, feed.Removed)
-		mongo.SaveFeedItem(*feed)
+func (h *Handler) RemoveHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := idFromPath(r.URL.Path)
+	feed, err := h.store.Feed(ctx, id)
+	switch {
+	case errors.Is(err, mongo.ErrInvalidID):
+		http.Error(w, "invalid feed id", http.StatusBadRequest)
+		return
+	case err != nil:
+		h.fail(w, r, "loading feed "+id, err)
+		return
 	}
-	http.Redirect(w, r, "/view/", http.StatusFound)
+	feed.Removed = true
+	if err := h.store.SaveFeedItem(ctx, *feed); err != nil {
+		h.fail(w, r, "removing feed", err)
+		return
+	}
+	log.Println("removed feed", feed.ID.Hex(), feed.Name)
+	h.redirect(w, r, "removed "+feed.Name)
 }
 
-func SaveHandler(w http.ResponseWriter, r *http.Request) {
-	feed, err := mongo.GetFeed(r.URL.Path[6:])
-	if err != nil {
-		log.Println("error getting feed", err.Error())
+func (h *Handler) SaveHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
 	}
-	lang := r.FormValue("language")
-	category := mongo.GetCategory(r.FormValue("category"))
+	id := idFromPath(r.URL.Path)
+	feed, err := h.store.Feed(ctx, id)
+	switch {
+	case errors.Is(err, mongo.ErrNotFound), errors.Is(err, mongo.ErrInvalidID):
+		// Unknown id: treat the form as the creation of a new feed.
+		feed = nil
+	case err != nil:
+		h.fail(w, r, "loading feed", err)
+		return
+	}
+
+	in := domain.FeedInput{
+		Name:     r.FormValue("name"),
+		URL:      r.FormValue("url"),
+		SiteURL:  r.FormValue("siteUrl"),
+		Language: r.FormValue("language"),
+	}
+	if feed != nil {
+		in.ID = feed.ID
+	}
+	in.Normalize()
+	if err := in.Validate(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if in.Category, err = h.category(ctx, r.FormValue("category")); err != nil {
+		h.fail(w, r, "resolving category", err)
+		return
+	}
+	if in.SubCategory, err = h.subCategory(ctx, r.FormValue("subCategory")); err != nil {
+		h.fail(w, r, "resolving sub category", err)
+		return
+	}
+	if err := h.store.SaveFeed(ctx, feed, in); err != nil {
+		h.fail(w, r, "saving feed", err)
+		return
+	}
+	h.redirect(w, r, "saved "+in.Name)
+}
+
+func (h *Handler) SaveCategoryHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+	cat := rss.Category{
+		Name:      strings.TrimSpace(r.FormValue("categoryName")),
+		EnName:    strings.TrimSpace(r.FormValue("enName")),
+		StyleName: strings.TrimSpace(r.FormValue("styleName")),
+	}
+	if cat.Name == "" {
+		http.Error(w, "category name is required", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.SaveCategory(ctx, cat); err != nil {
+		h.fail(w, r, "saving category", err)
+		return
+	}
+	h.redirect(w, r, "saved category "+cat.Name)
+}
+
+func (h *Handler) SaveSubCategoryHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form data", http.StatusBadRequest)
+		return
+	}
+	sub := rss.SubCategory{SubCategory: strings.TrimSpace(r.FormValue("subCategory"))}
+	if sub.SubCategory == "" {
+		http.Error(w, "sub category name is required", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.SaveSubCategory(ctx, sub); err != nil {
+		h.fail(w, r, "saving sub category", err)
+		return
+	}
+	h.redirect(w, r, "saved sub category "+sub.SubCategory)
+}
+
+// category resolves a form value into a category, creating it when it is new.
+// The old code attached a random object id to the feed instead, which left the
+// feed pointing at a category document that never existed.
+func (h *Handler) category(ctx context.Context, name string) (rss.Category, error) {
+	name = strings.TrimSpace(name)
+	if isPlaceholder(name) {
+		return rss.Category{}, nil
+	}
+	category, err := h.store.CategoryByName(ctx, name)
+	if err != nil {
+		return rss.Category{}, err
+	}
 	if category.ID.IsZero() {
-		category.ID = primitive.NewObjectID()
+		category = rss.Category{ID: newObjectID(), Name: name}
+		if err := h.store.SaveCategory(ctx, category); err != nil {
+			return rss.Category{}, err
+		}
 	}
-	subCategory := mongo.GetSubCategory(r.FormValue("subCategory"))
-	if subCategory.ID.IsZero() {
-		subCategory.ID = primitive.NewObjectID()
-	}
-	name := r.FormValue("name")
-	url := r.FormValue("url")
-	siteURL := r.FormValue("siteUrl")
-	mongo.SaveFeed(feed, lang, name, url, siteURL, category, subCategory)
-	http.Redirect(w, r, "/view/", http.StatusFound)
+	return category, nil
 }
 
-func SaveCategoryHandler(w http.ResponseWriter, r *http.Request) {
-	category := rss.Category{ID: primitive.NewObjectID(),
-		Name:      r.FormValue("categoryName"),
-		EnName:    r.FormValue("enName"),
-		StyleName: r.FormValue("styleName")}
-	mongo.SaveCategory(category)
-	http.Redirect(w, r, "/view/", http.StatusFound)
-}
-
-func SaveSubCategoryHandler(w http.ResponseWriter, r *http.Request) {
-	subCategory := rss.SubCategory{ID: primitive.NewObjectID(),
-		SubCategory: r.FormValue("subCategory"),
+func (h *Handler) subCategory(ctx context.Context, name string) (rss.SubCategory, error) {
+	name = strings.TrimSpace(name)
+	if isPlaceholder(name) {
+		return rss.SubCategory{}, nil
 	}
-	mongo.SaveSubCategory(subCategory)
-	http.Redirect(w, r, "/view/", http.StatusFound)
-}
-
-func renderTemplate(w http.ResponseWriter, tmpl string, f domain.EditPage) {
-	err := templates.ExecuteTemplate(w, tmpl, f)
+	sub, err := h.store.SubCategoryByName(ctx, name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return rss.SubCategory{}, err
+	}
+	if sub.ID.IsZero() {
+		sub = rss.SubCategory{ID: newObjectID(), SubCategory: name}
+		if err := h.store.SaveSubCategory(ctx, sub); err != nil {
+			return rss.SubCategory{}, err
+		}
+	}
+	return sub, nil
+}
+
+func isPlaceholder(name string) bool {
+	return name == "" || name == "0" || name == "Select"
+}
+
+// idFromPath returns the trailing id of a /<verb>/<id> path. Indexing the URL
+// with a magic offset (r.URL.Path[6:]) was both fragile and wrong for paths
+// such as /save/category.
+func idFromPath(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[len(parts)-1]
+}
+
+func (h *Handler) render(w http.ResponseWriter, tmpl string, data any) {
+	h.renderStatus(w, http.StatusOK, tmpl, data)
+}
+
+func (h *Handler) renderStatus(w http.ResponseWriter, status int, tmpl string, data any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	if err := h.templates.ExecuteTemplate(w, tmpl, data); err != nil {
+		log.Printf("http: rendering %s: %v", tmpl, err)
 	}
 }
 
-func renderViewTemplate(w http.ResponseWriter, tmpl string, f *domain.ViewPage) {
-	err := templates.ExecuteTemplate(w, tmpl, f)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+// fail logs the real error and answers with something a client can act on. The
+// prefixed package errors ("mongo: conflict: ...") go to the log only.
+func (h *Handler) fail(w http.ResponseWriter, r *http.Request, op string, err error) {
+	log.Printf("http: %s %s: %v: %v", r.Method, r.URL.Path, op, err)
+	switch {
+	case errors.Is(err, mongo.ErrDuplicateFeed):
+		http.Error(w, "that feed is already subscribed", http.StatusConflict)
+	case errors.Is(err, mongo.ErrConflict):
+		http.Error(w, "it changed under you, please try again", http.StatusConflict)
+	case errors.Is(err, mongo.ErrInvalidID):
+		http.Error(w, "invalid id", http.StatusBadRequest)
+	case errors.Is(err, mongo.ErrNotFound):
+		http.Error(w, "could not "+op, http.StatusNotFound)
+	default:
+		http.Error(w, "could not "+op, http.StatusInternalServerError)
 	}
 }
+
+// redirect sends the browser back to the feed list (PRG pattern) with a short
+// flash message.
+func (h *Handler) redirect(w http.ResponseWriter, r *http.Request, flash string) {
+	target := "/view/"
+	if flash != "" {
+		target += "?flash=" + url.QueryEscape(flash)
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// WithTimeout bounds a request handler; the server wide timeouts only cover the
+// network layer.
+func WithTimeout(d time.Duration, next http.Handler) http.Handler {
+	return http.TimeoutHandler(next, d, "request timed out")
+}
+
+func newObjectID() bson.ObjectID { return bson.NewObjectID() }

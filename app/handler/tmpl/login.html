@@ -1,0 +1,17 @@
+{{define "login"}}
+{{template "header" .}}
+        <h1>rssfetcher</h1>
+        {{template "messages" .}}
+        <div class="panel">
+            <form method="POST" action="/login">
+                <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+                <input type="hidden" name="next" value="{{.Next}}">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" value="{{.Username}}" autocomplete="username" required autofocus>
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+                <input type="submit" value="log in">
+            </form>
+        </div>
+{{template "footer" .}}
+{{end}}

@@ -1,0 +1,83 @@
+{{define "view"}}
+{{template "header" .}}
+        <h1>Feed list</h1>
+        {{template "messages" .}}
+
+        <p><a class="button" href="/edit">Add a new feed</a></p>
+
+        <h2>Feeds ({{len .Feeds}})</h2>
+        <ul class="feeds">
+            {{range .Feeds}}
+            <li>
+                <span class="name">{{.Name}}</span>
+                <span class="tag">{{if .Category.Name}}{{.Category.Name}}{{else}}uncategorised{{end}}</span>
+                {{with .EffectiveSubCategory}}<span class="tag">{{.SubCategory}}</span>{{end}}
+                {{if .Language}}<span class="tag">{{.Language}}</span>{{end}}
+                <span class="url"><a href="{{.URL}}">{{.URL}}</a></span>
+                <span class="meta">{{.ID.Hex}}</span>
+                <a href="/edit/{{.ID.Hex}}">edit</a>
+                {{if .Removed}}
+                <span class="removed">removed</span>
+                {{else}}
+                <form class="inline" method="POST" action="/delete/{{.ID.Hex}}">
+                    <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+                    <input type="submit" class="danger" value="delete">
+                </form>
+                {{end}}
+            </li>
+            {{else}}
+            <li class="muted">No feeds yet — add one to get started.</li>
+            {{end}}
+        </ul>
+
+        <h2>Categories</h2>
+        <ul class="terms">
+            {{range .Categories}}<li>{{.Name}}{{with .EnName}} <span class="muted">({{.}})</span>{{end}}</li>{{else}}
+            <li class="muted">No categories yet.</li>{{end}}
+        </ul>
+
+        <div class="panel">
+            <h2>Add a category</h2>
+            <form method="POST" action="/save/category">
+                <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+                <label for="categoryName">name</label>
+                <input type="text" id="categoryName" name="categoryName" required>
+                <label for="enName">english name</label>
+                <input type="text" id="enName" name="enName">
+                <label for="styleName">style name</label>
+                <input type="text" id="styleName" name="styleName">
+                <input type="submit" value="save category">
+            </form>
+        </div>
+
+        <h2>Sub categories</h2>
+        <ul class="terms">
+            {{range .SubCategories}}<li>{{.SubCategory}}{{with .EnName}} <span class="muted">({{.}})</span>{{end}}</li>{{else}}
+            <li class="muted">No sub categories yet.</li>{{end}}
+        </ul>
+
+        <div class="panel">
+            <h2>Add a sub category</h2>
+            <form method="POST" action="/save/subcategory">
+                <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+                <label for="subCategory">name</label>
+                <input type="text" id="subCategory" name="subCategory" required>
+                <label for="subEnName">english name</label>
+                <input type="text" id="subEnName" name="enName">
+                <input type="submit" value="save sub category">
+            </form>
+        </div>
+
+        <div class="panel">
+            <h2>Change password</h2>
+            <form method="POST" action="/account/password">
+                <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+                <label for="current_password">current password</label>
+                <input type="password" id="current_password" name="currentPassword" autocomplete="current-password" required>
+                <label for="new_password">new password</label>
+                <input type="password" id="new_password" name="newPassword" autocomplete="new-password" required>
+                <input type="submit" value="change password">
+            </form>
+        </div>
+{{template "footer" .}}
+{{end}}

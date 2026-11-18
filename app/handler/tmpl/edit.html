@@ -1,0 +1,47 @@
+{{define "edit"}}
+{{template "header" .}}
+        <h1>Editing {{.Feed.Name}}</h1>
+        <p class="hint">{{with .Feed.Category.Name}}{{.}}{{else}}no category{{end}}
+            {{with .Feed.SubCategory}}/ {{.SubCategory}}{{end}} · <span class="id">{{.Feed.ID.Hex}}</span></p>
+        {{template "messages" .}}
+
+        <div class="panel">
+            <form action="/save/{{.Feed.ID.Hex}}" method="POST">
+                {{template "csrf" $}}
+                <label for="name">Feed name</label>
+                <input type="text" id="name" name="name" value="{{.Feed.Name}}" required autofocus>
+
+                <label for="url">Feed URL</label>
+                <input type="text" id="url" name="url" value="{{.Feed.URL}}" placeholder="https://example.com/feed.xml" required>
+
+                <label for="siteUrl">Site URL</label>
+                <input type="text" id="siteUrl" name="siteUrl" value="{{.Feed.SiteURL}}" placeholder="https://example.com">
+
+                <label for="category">Category</label>
+                <select id="category" name="category">
+                    <option value="0" label="Select"></option>
+                    {{$category := .Feed.Category.Name}}
+                    {{range .Categories}}
+                    <option value="{{.Name}}" {{if eq $category .Name}}selected{{end}}>{{.Name}}</option>
+                    {{end}}
+                </select>
+
+                <label for="subCategory">Sub category</label>
+                <select id="subCategory" name="subCategory">
+                    <option value="0" label="Select"></option>
+                    {{$sub := ""}}
+                    {{with .Feed.SubCategory}}{{$sub = .SubCategory}}{{end}}
+                    {{range .SubCategories}}
+                    <option value="{{.SubCategory}}" {{if eq $sub .SubCategory}}selected{{end}}>{{.SubCategory}}</option>
+                    {{end}}
+                </select>
+
+                <label for="language">Language</label>
+                <input type="text" id="language" name="language" value="{{.Feed.Language}}" placeholder="sv">
+
+                <input type="submit" value="save feed">
+                <a class="secondary" href="/view/">cancel</a>
+            </form>
+        </div>
+{{template "footer" .}}
+{{end}}

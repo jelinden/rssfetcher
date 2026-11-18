@@ -1,0 +1,298 @@
+/* rssfetcher admin UI — no external fonts, no JS, one file. */
+
+:root {
+  --bg: #ffffff;
+  --panel: #f6f7f9;
+  --border: #d9dde3;
+  --text: #1c1f24;
+  --muted: #5b636e;
+  --accent: #1f6feb;
+  --accent-text: #ffffff;
+  --danger: #b3261e;
+  --ok: #17693a;
+  --radius: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --panel: #1c1f25;
+    --border: #333842;
+    --text: #e6e8ea;
+    --muted: #9aa3ad;
+    --accent: #4c8dff;
+    --accent-text: #10131a;
+    --danger: #ff6b61;
+    --ok: #4cc38a;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+  max-width: 62rem;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+header.app {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+header.app nav {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.5rem;
+}
+
+h2 {
+  margin: 2rem 0 0.75rem;
+  font-size: 1.05rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover,
+a:focus {
+  text-decoration: underline;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+ul.feeds li,
+ul.terms li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+ul.feeds li + li,
+ul.terms li + li {
+  margin-top: 0.4rem;
+}
+
+ul.feeds .name {
+  font-weight: 600;
+}
+
+ul.feeds .meta,
+.muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+ul.feeds .url {
+  flex: 1 1 18rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
+
+.tag {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.removed {
+  font-style: italic;
+  color: var(--danger);
+}
+
+form {
+  margin: 0;
+}
+
+form.inline {
+  display: inline;
+}
+
+.panel {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  max-width: 34rem;
+}
+
+.panel + .panel {
+  margin-top: 1rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+input[type="text"],
+input[type="password"],
+select {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  margin-bottom: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button,
+input[type="submit"] {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover,
+input[type="submit"]:hover {
+  filter: brightness(1.08);
+}
+
+button.secondary,
+input[type="submit"].secondary {
+  background: transparent;
+  color: var(--accent);
+}
+
+button.danger,
+input[type="submit"].danger {
+  border-color: var(--danger);
+  background: transparent;
+  color: var(--danger);
+}
+
+.flash,
+.error {
+  padding: 0.6rem 0.8rem;
+  margin: 0 0 1.25rem;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.flash {
+  border-left-color: var(--ok);
+}
+
+.error {
+  border-left-color: var(--danger);
+}
+
+.hint {
+  margin: -0.5rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.login main {
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+}
+
+.login .panel {
+  width: 100%;
+  max-width: 22rem;
+}
+
+.login h1 {
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+/* Link styled as a button (the "add a new feed" / cancel actions). */
+a.button,
+a.secondary {
+  display: inline-block;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--accent);
+  background: transparent;
+}
+
+a.button {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+a.button:hover,
+a.secondary:hover {
+  text-decoration: none;
+  filter: brightness(1.08);
+}
+
+nav form.inline button,
+nav form.inline input[type="submit"] {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.id {
+  color: var(--muted);
+  font: 0.75rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+footer.app {
+  margin-top: 3rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
