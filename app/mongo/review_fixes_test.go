@@ -421,14 +421,15 @@ func TestFetchNewsSkipsFeedsThatAreStillFresh(t *testing.T) {
 
 // The TTL of the feed document is what the next cycle reads, so it has to be
 // stored together with the validators.
-func TestSaveFeedValidatorsStoresTheTTL(t *testing.T) {
+func TestRecordFetchStoresTheValidatorsAndTTL(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t)
 	feed := domain.Feed{ID: bson.NewObjectID(), Name: "ttlstore", URL: "https://example.com/ttlstore.xml"}
 	if err := store.SaveFeed(ctx, nil, feedInput(feed)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveFeedValidators(ctx, feed.ID, `"e"`, "Mon, 02 Jan 2026 10:00:00 GMT", 30*time.Minute); err != nil {
+	err := store.RecordFetch(ctx, feed.ID, FetchOutcome{ETag: `"e"`, LastModified: "Mon, 02 Jan 2026 10:00:00 GMT", TTL: 30 * time.Minute})
+	if err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := store.Feed(ctx, feed.ID.Hex())

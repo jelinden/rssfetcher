@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jelinden/rssfetcher/app/auth"
 	"github.com/jelinden/rssfetcher/app/domain"
@@ -237,25 +238,99 @@ func (s *Store) SaveFeedItem(ctx context.Context, feed domain.Feed) error {
 	return nil
 }
 
-// SaveFeedValidators records the conditional-GET validators of the last
-// successful fetch of a feed.
-func (s *Store) SaveFeedValidators(ctx context.Context, id bson.ObjectID, etag, lastModified string, ttl time.Duration) error {
+// MaxStatusMessageLen bounds the error text stored on a feed document. A parse
+// failure quotes the beginning of the response, which for an HTML error page is
+// several hundred bytes of markup; the log keeps the whole thing.
+const MaxStatusMessageLen = 400
+
+// FetchOutcome is the result of one attempt at one feed. It is stored on the
+// feed document so the admin UI can show what is broken: before this, the only
+// sign of a dead subscription was a line in the server log.
+type FetchOutcome struct {
+	// Err is set when the attempt failed.
+	Err error
+	// Unchanged marks a 304 answer: the feed is reachable and healthy, there is
+	// just nothing new, so the stored validators stay as they are.
+	Unchanged bool
+
+	// ETag, LastModified and TTL describe a fetch that got a body, and Items is
+	// how many of its items were stored.
+	ETag         string
+	LastModified string
+	TTL          time.Duration
+	Items        int
+}
+
+// RecordFetch writes the outcome of a fetch attempt.
+//
+// Two details matter. A failure must not disturb the conditional GET validators:
+// a feed that returned 500 today should still ask conditionally tomorrow rather
+// than re-download its whole history. And the failure counter is incremented by
+// the database, so two overlapping cycles cannot lose one of the increments.
+func (s *Store) RecordFetch(ctx context.Context, id bson.ObjectID, outcome FetchOutcome) error {
+	if id.IsZero() {
+		return fmt.Errorf("%w: feed id is required", ErrInvalidID)
+	}
+	now := time.Now().UTC()
+
+	var update bson.D
+	if outcome.Err != nil {
+		update = append(update,
+			bson.E{Key: "$set", Value: bson.D{
+				{Key: "lastError", Value: truncateStatus(outcome.Err.Error(), MaxStatusMessageLen)},
+				{Key: "lastErrorAt", Value: now},
+			}},
+			// The counter is incremented in the database, so two overlapping
+			// cycles cannot lose one of the increments.
+			bson.E{Key: "$inc", Value: bson.D{{Key: "failures", Value: 1}}},
+		)
+	} else {
+		set := bson.D{
+			{Key: "okAt", Value: now},
+			{Key: "failures", Value: 0},
+		}
+		if !outcome.Unchanged {
+			// fetchedAt records the last response that carried content, which is
+			// what the <ttl> window is measured from: a 304 says the stored items
+			// are still current, not that new ones arrived.
+			set = append(set,
+				bson.E{Key: "etag", Value: outcome.ETag},
+				bson.E{Key: "lastModified", Value: outcome.LastModified},
+				bson.E{Key: "fetchedAt", Value: now},
+				bson.E{Key: "ttl", Value: outcome.TTL},
+				bson.E{Key: "lastItems", Value: outcome.Items},
+			)
+		}
+		// A feed that answers again is no longer broken, whatever it did before.
+		update = append(update,
+			bson.E{Key: "$set", Value: set},
+			bson.E{Key: "$unset", Value: bson.D{
+				{Key: "lastError", Value: ""},
+				{Key: "lastErrorAt", Value: ""},
+			}},
+		)
+	}
+
 	ctx, cancel := s.opCtx(ctx)
 	defer cancel()
 
-	_, err := s.collection(feedCollection).UpdateOne(ctx,
-		bson.M{"_id": id},
-		bson.D{{Key: "$set", Value: bson.D{
-			{Key: "etag", Value: etag},
-			{Key: "lastModified", Value: lastModified},
-			{Key: "fetchedAt", Value: time.Now().UTC()},
-			{Key: "ttl", Value: ttl},
-		}}},
-	)
-	if err != nil {
-		return fmt.Errorf("mongo: save validators of %s: %w", id.Hex(), err)
+	if _, err := s.collection(feedCollection).UpdateOne(ctx, bson.M{"_id": id}, update); err != nil {
+		return fmt.Errorf("mongo: record fetch of %s: %w", id.Hex(), err)
 	}
 	return nil
+}
+
+// truncateStatus cuts a message to max bytes without splitting a UTF-8 rune: the
+// messages here quote page bodies, which are full of ä and €.
+func truncateStatus(message string, max int) string {
+	if max <= 0 || len(message) <= max {
+		return message
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(message[cut]) {
+		cut--
+	}
+	return message[:cut] + "…"
 }
 
 // SaveFeed creates or updates a feed.
@@ -496,11 +571,77 @@ func FeedsDueForFetch(feeds []domain.Feed, now time.Time) []domain.Feed {
 }
 
 // fetchResult is one feed download attempt.
+// FetchReport is what a manual check of a single feed produced.
+type FetchReport struct {
+	// Items is how many items the fetch stored (0 when the publisher said 304).
+	Items int
+	// Unchanged reports a conditional GET that was answered with 304.
+	Unchanged bool
+}
+
+// FetchOne downloads a single feed and stores its items and status, which is
+// what the "check now" button in the admin UI needs: an operator fixes a URL and
+// wants to know right then whether the publisher answers. The conditional GET
+// validators are honoured, so a feed that was just fetched is not re-downloaded.
+func (s *Store) FetchOne(ctx context.Context, feedID string, fetcher ...rss.FetchFunc) (FetchReport, error) {
+	feed, err := s.Feed(ctx, feedID)
+	if err != nil {
+		return FetchReport{}, err
+	}
+	var fn rss.FetchFunc
+	if len(fetcher) > 0 {
+		fn = fetcher[0]
+	}
+	if fn == nil {
+		fn = rss.Fetch
+	}
+
+	res := s.fetchFeed(ctx, *feed, fn)
+	switch {
+	case res.err != nil:
+		s.recordFetchQuietly(ctx, feed.ID, FetchOutcome{Err: res.err})
+		return FetchReport{}, res.err
+	case res.notModified:
+		s.recordFetchQuietly(ctx, feed.ID, FetchOutcome{Unchanged: true})
+		return FetchReport{Unchanged: true}, nil
+	}
+
+	n, err := s.saveNewsItems(ctx, *feed, res.items)
+	if err != nil {
+		s.recordFetchQuietly(ctx, feed.ID, FetchOutcome{Err: err})
+		return FetchReport{}, err
+	}
+	s.recordFetchQuietly(ctx, feed.ID, FetchOutcome{
+		ETag:         res.etag,
+		LastModified: res.lastModified,
+		TTL:          res.ttl,
+		Items:        n,
+	})
+	return FetchReport{Items: n}, nil
+}
+
+// recordFetchQuietly writes a fetch outcome, complaining only in the log: the
+// status of one feed is never worth failing a whole cycle over.
+func (s *Store) recordFetchQuietly(ctx context.Context, id bson.ObjectID, outcome FetchOutcome) {
+	if id.IsZero() {
+		return
+	}
+	if err := s.RecordFetch(ctx, id, outcome); err != nil {
+		log.Printf("mongo: recording the status of %s: %v", id.Hex(), err)
+	}
+}
+
 type fetchResult struct {
 	feed        domain.Feed
 	items       []*rss.Item
 	notModified bool
 	err         error
+
+	// Validators of a response that carried content, to be stored with the
+	// health status in one write.
+	etag         string
+	lastModified string
+	ttl          time.Duration
 }
 
 // FetchNews downloads every feed and stores its newest items. Downloads run
@@ -537,12 +678,15 @@ func (s *Store) FetchNews(ctx context.Context, feeds []domain.Feed, fetcher rss.
 			failures++
 			log.Printf("rssfetcher: feed %s failed: %v", res.feed.URL, res.err)
 			errs = append(errs, fmt.Errorf("feed %s: %w", res.feed.URL, res.err))
+			s.recordFetchQuietly(ctx, res.feed.ID, FetchOutcome{Err: res.err})
 			continue
 		}
 		if res.notModified {
 			// The publisher said "unchanged": there is nothing to write and the
-			// stored items and validators stay as they are.
+			// stored items and validators stay as they are. The feed is still
+			// marked healthy, because it answered.
 			unchanged++
+			s.recordFetchQuietly(ctx, res.feed.ID, FetchOutcome{Unchanged: true})
 			continue
 		}
 		n, err := s.saveNewsItems(ctx, res.feed, res.items)
@@ -550,9 +694,16 @@ func (s *Store) FetchNews(ctx context.Context, feeds []domain.Feed, fetcher rss.
 			failures++
 			errs = append(errs, fmt.Errorf("store %s: %w", res.feed.URL, err))
 			log.Printf("rssfetcher: storing items of %s: %v", res.feed.URL, err)
+			s.recordFetchQuietly(ctx, res.feed.ID, FetchOutcome{Err: err})
 			continue
 		}
 		written += n
+		s.recordFetchQuietly(ctx, res.feed.ID, FetchOutcome{
+			ETag:         res.etag,
+			LastModified: res.lastModified,
+			TTL:          res.ttl,
+			Items:        n,
+		})
 	}
 
 	if unchanged > 0 {
@@ -633,15 +784,12 @@ func (s *Store) fetchFeed(ctx context.Context, feed domain.Feed, fetcher rss.Fet
 	}
 
 	res.items = response.Feed.Items
-	// Persist the validators even when the parse produced no items: the next
-	// cycle should still ask conditionally.
-	ttl := time.Duration(0)
-	if response.Feed != nil {
-		ttl = response.Feed.TTL
-	}
-	if err := s.SaveFeedValidators(ctx, feed.ID, response.ETag, response.LastModified, ttl); err != nil {
-		log.Printf("mongo: recording validators of %s: %v", feed.URL, err)
-	}
+	// The validators are reported to the caller and stored there, in the same
+	// write as the health status: splitting them meant a cycle could record the
+	// one and not the other.
+	res.etag = response.ETag
+	res.lastModified = response.LastModified
+	res.ttl = response.Feed.TTL
 	return res
 }
 

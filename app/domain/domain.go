@@ -33,6 +33,50 @@ type Feed struct {
 	// skips a feed until this much time has passed since FetchedAt, so a pollite
 	// global interval can still leave a slow moving publisher alone.
 	TTL time.Duration `json:"ttl" bson:"ttl,omitempty"`
+
+	// Result of the last fetch attempt, kept on the feed so the admin UI can
+	// point at what is broken. Before this, a subscription could 404 for months
+	// and look exactly like a working one on the page; the only trace was in the
+	// server log. LastError is empty for a healthy feed.
+	LastError   string    `json:"lastError" bson:"lastError,omitempty"`
+	LastErrorAt time.Time `json:"lastErrorAt" bson:"lastErrorAt,omitempty"`
+	// OKAt is the last attempt that worked, and Failures counts the consecutive
+	// ones since then - enough to tell "newly broken" from "broken for a week".
+	OKAt     time.Time `json:"okAt" bson:"okAt,omitempty"`
+	Failures int       `json:"failures" bson:"failures,omitempty"`
+	// LastItems is how many items the last fetch that got a body wrote. Re-fetching
+	// a feed whose items are all known writes nothing, so this is a count of new
+	// articles, not of the articles stored for the feed.
+	LastItems int `json:"lastItems" bson:"lastItems,omitempty"`
+}
+
+// Failing reports whether the last attempt at this feed ended in an error.
+func (f Feed) Failing() bool {
+	return strings.TrimSpace(f.LastError) != ""
+}
+
+// NeverChecked reports a feed that has been added but not fetched yet, which the
+// UI shows as "never checked" instead of pretending it is healthy.
+func (f Feed) NeverChecked() bool {
+	return f.OKAt.IsZero() && f.LastErrorAt.IsZero()
+}
+
+// StatusAge is how long ago the current status was recorded, taking the more
+// recent of the two timestamps. It is zero when nothing has been attempted, so
+// the caller never renders "broken since 500000 hours ago".
+func (f Feed) StatusAge(now time.Time) time.Duration {
+	at := f.OKAt
+	if f.LastErrorAt.After(at) {
+		at = f.LastErrorAt
+	}
+	if at.IsZero() {
+		return 0
+	}
+	d := now.Sub(at)
+	if d < 0 {
+		return 0
+	}
+	return d
 }
 
 // EffectiveSubCategory returns the sub category or nil when it is unset. Feeds
@@ -148,6 +192,16 @@ type ViewPage struct {
 	Feeds         []Feed            `json:"feeds"`
 	Categories    []rss.Category    `json:"categories"`
 	SubCategories []rss.SubCategory `json:"subCategories"`
+
+	// Broken is how many active subscriptions failed their last fetch, and
+	// StatusFilter is the query narrows the list to them ("broken") or empty.
+	// In a list of seventy feeds, the summary line is what makes a dead
+	// publisher impossible to miss.
+	Broken       int    `json:"broken"`
+	StatusFilter string `json:"statusFilter"`
+	// Total is the number of feeds before the filter, so the summary can say
+	// "1 broken of 71" instead of leaving the operator to count.
+	Total int `json:"total"`
 }
 
 type EditPage struct {
