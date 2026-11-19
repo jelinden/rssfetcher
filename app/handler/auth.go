@@ -40,7 +40,17 @@ type Options struct {
 	// LoginMaxFailures/LoginWindow control the per-client brute force throttle.
 	LoginMaxFailures int
 	LoginWindow      time.Duration
+	// RefetchTimeout bounds a "check now" request. It talks to a third party on
+	// the operator's behalf, so it cannot be allowed to hold the request open
+	// for as long as that publisher decides to stall. Zero means
+	// DefaultRefetchTimeout.
+	RefetchTimeout time.Duration
 }
+
+// DefaultRefetchTimeout is the budget of one manual feed check: long enough for
+// a slow publisher to answer, short enough that the admin page always comes
+// back. A whole-cycle fetch is bounded separately by -fetch-timeout.
+const DefaultRefetchTimeout = 30 * time.Second
 
 func (o *Options) normalize() {
 	if o.SessionTTL <= 0 {
@@ -57,6 +67,9 @@ func (o *Options) normalize() {
 	}
 	if o.LoginWindow <= 0 {
 		o.LoginWindow = 5 * time.Minute
+	}
+	if o.RefetchTimeout <= 0 {
+		o.RefetchTimeout = DefaultRefetchTimeout
 	}
 }
 

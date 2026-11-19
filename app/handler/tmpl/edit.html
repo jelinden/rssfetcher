@@ -5,6 +5,12 @@
             {{with .Feed.SubCategory}}/ {{.SubCategory}}{{end}} · <span class="id">{{.Feed.ID.Hex}}</span></p>
         {{template "messages" .}}
 
+        <p class="summary">{{template "feedstatus" .Feed}}
+            {{- if .Feed.Failing -}}
+            <span class="muted">fix the URL below and press "check now" on the feed list.</span>
+            {{- end -}}
+        </p>
+
         <div class="panel">
             <form action="/save/{{.Feed.ID.Hex}}" method="POST">
                 {{template "csrf" $}}

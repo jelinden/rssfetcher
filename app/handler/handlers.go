@@ -26,6 +26,11 @@ type Store interface {
 	Feed(ctx context.Context, id string) (*domain.Feed, error)
 	SaveFeed(ctx context.Context, feed *domain.Feed, in domain.FeedInput) error
 	SaveFeedItem(ctx context.Context, feed domain.Feed) error
+	// FetchOne downloads a single feed now, stores its items and records the
+	// outcome on the feed. It backs the "check now" button: after fixing a URL
+	// the operator should not have to wait for the next cycle to learn whether
+	// the publisher answers.
+	FetchOne(ctx context.Context, feedID string, fetcher ...rss.FetchFunc) (mongo.FetchReport, error)
 	Categories(ctx context.Context) ([]rss.Category, error)
 	SubCategories(ctx context.Context) ([]rss.SubCategory, error)
 	CategoryByName(ctx context.Context, name string) (rss.Category, error)
@@ -96,6 +101,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("/view/", h.requireAuth(h.method(http.MethodGet, h.ViewHandler)))
 	mux.Handle("/edit/", h.requireAuth(h.method(http.MethodGet, h.EditHandler)))
 	mux.Handle("/delete/", h.requireAuth(h.method(http.MethodPost, h.RemoveHandler)))
+	mux.Handle("/check/", h.requireAuth(h.method(http.MethodPost, h.CheckHandler)))
 	mux.Handle("/save/", h.requireAuth(h.method(http.MethodPost, h.SaveHandler)))
 	mux.Handle("/save/category", h.requireAuth(h.method(http.MethodPost, h.SaveCategoryHandler)))
 	mux.Handle("/save/subcategory", h.requireAuth(h.method(http.MethodPost, h.SaveSubCategoryHandler)))
@@ -160,10 +166,27 @@ func (h *Handler) ViewHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	viewPage := domain.ViewPage{Page: h.page(w, r, "Feeds")}
 
+	viewPage.StatusFilter = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
+
 	var err error
-	if viewPage.Feeds, err = h.store.Feeds(ctx, false); err != nil {
+	// Removed feeds are listed too (that is how you see what you deleted), but
+	// they are not polled, so they never belong in the broken count.
+	all, err := h.store.Feeds(ctx, false)
+	if err != nil {
 		h.fail(w, r, "loading feeds", err)
 		return
+	}
+	viewPage.Total = len(all)
+	for _, feed := range all {
+		if !feed.Removed && feed.Failing() {
+			viewPage.Broken++
+		}
+	}
+	if viewPage.StatusFilter == statusBroken {
+		viewPage.Feeds = activeFeeds(all)
+		viewPage.Feeds = brokenFeeds(viewPage.Feeds)
+	} else {
+		viewPage.Feeds = all
 	}
 	if viewPage.Categories, err = h.store.Categories(ctx); err != nil {
 		h.fail(w, r, "loading categories", err)
@@ -229,6 +252,70 @@ func (h *Handler) RemoveHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("removed feed", feed.ID.Hex(), feed.Name)
 	h.redirect(w, r, "removed "+feed.Name)
+}
+
+// statusBroken is the only ?status= value; anything else lists everything.
+const statusBroken = "broken"
+
+// activeFeeds drops the removed rows.
+func activeFeeds(feeds []domain.Feed) []domain.Feed {
+	out := make([]domain.Feed, 0, len(feeds))
+	for _, feed := range feeds {
+		if !feed.Removed {
+			out = append(out, feed)
+		}
+	}
+	return out
+}
+
+// brokenFeeds keeps the subscriptions whose last fetch attempt failed.
+func brokenFeeds(feeds []domain.Feed) []domain.Feed {
+	out := make([]domain.Feed, 0, len(feeds))
+	for _, feed := range feeds {
+		if feed.Failing() {
+			out = append(out, feed)
+		}
+	}
+	return out
+}
+
+// CheckHandler fetches one feed on demand and reports the result. It is a POST
+// because it costs the publisher a request, and it is bounded by
+// Options.RefetchTimeout rather than the cycle deadline: an operator pressing a
+// button should get an answer, even if the remote host is merely stalling.
+func (h *Handler) CheckHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := idFromPath(r.URL.Path)
+	feed, err := h.store.Feed(ctx, id)
+	switch {
+	case errors.Is(err, mongo.ErrInvalidID):
+		http.Error(w, "invalid feed id", http.StatusBadRequest)
+		return
+	case err != nil:
+		h.fail(w, r, "loading feed "+id, err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, h.opts.RefetchTimeout)
+	defer cancel()
+
+	report, err := h.store.FetchOne(ctx, feed.ID.Hex())
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		h.redirect(w, r, fmt.Sprintf("checked %s: no answer within %s", feed.Name, h.opts.RefetchTimeout))
+	case err != nil:
+		// The failure is also recorded on the feed document, so the list shows
+		// it after the redirect.
+		h.redirect(w, r, fmt.Sprintf("checked %s: still failing: %v", feed.Name, err))
+	case report.Unchanged:
+		h.redirect(w, r, fmt.Sprintf("checked %s: the publisher said nothing has changed", feed.Name))
+	case report.Items == 0:
+		// A body arrived but every item in it was already stored. Saying "0 items"
+		// alone would read like the feed is empty.
+		h.redirect(w, r, fmt.Sprintf("checked %s: no new items", feed.Name))
+	default:
+		h.redirect(w, r, fmt.Sprintf("checked %s: %d items", feed.Name, report.Items))
+	}
 }
 
 func (h *Handler) SaveHandler(w http.ResponseWriter, r *http.Request) {

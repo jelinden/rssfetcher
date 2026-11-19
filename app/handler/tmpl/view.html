@@ -6,21 +6,44 @@
         <p><a class="button" href="/edit">Add a new feed</a></p>
 
         <h2>Feeds ({{len .Feeds}})</h2>
+        <p class="summary">
+            {{- if .Broken -}}
+            <span class="status broken">{{.Broken}} broken</span>
+            <span class="muted">of {{.Total}} subscriptions</span>
+            {{- if eq .StatusFilter "broken" -}}
+            <a class="secondary" href="/view/">show all</a>
+            {{- else -}}
+            <a href="/view/?status=broken">list only those</a>
+            {{- end -}}
+            {{- else if .Total -}}
+            <span class="status ok">all {{.Total}} feeds answered their last fetch</span>
+            {{- if eq .StatusFilter "broken" -}}
+            <span class="muted">nothing to show here.</span> <a href="/view/">show all</a>
+            {{- end -}}
+            {{- else -}}
+            <span class="muted">nothing fetched yet.</span>
+            {{- end -}}
+        </p>
         <ul class="feeds">
             {{range .Feeds}}
-            <li>
+            <li{{if .Failing}} class="broken"{{end}}>
                 <span class="name">{{.Name}}</span>
                 <span class="tag">{{if .Category.Name}}{{.Category.Name}}{{else}}uncategorised{{end}}</span>
                 {{with .EffectiveSubCategory}}<span class="tag">{{.SubCategory}}</span>{{end}}
                 {{if .Language}}<span class="tag">{{.Language}}</span>{{end}}
                 <span class="url"><a href="{{.URL}}">{{.URL}}</a></span>
                 <span class="meta">{{.ID.Hex}}</span>
-                <a href="/edit/{{.ID.Hex}}">edit</a>
                 {{if .Removed}}
                 <span class="removed">removed</span>
                 {{else}}
+                {{template "feedstatus" .}}
+                <a href="/edit/{{.ID.Hex}}">edit</a>
+                <form class="inline" method="POST" action="/check/{{.ID.Hex}}">
+                    {{template "csrf" $}}
+                    <input type="submit" class="secondary" value="check now">
+                </form>
                 <form class="inline" method="POST" action="/delete/{{.ID.Hex}}">
-                    <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+                    {{template "csrf" $}}
                     <input type="submit" class="danger" value="delete">
                 </form>
                 {{end}}

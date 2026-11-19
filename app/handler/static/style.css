@@ -296,3 +296,56 @@ footer.app {
   color: var(--muted);
   font-size: 0.8rem;
 }
+
+/* Fetch status of a single subscription. */
+p.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin: 0 0 0.75rem;
+}
+
+.status {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status.ok {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.status.broken {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--accent-text);
+}
+
+@media (prefers-color-scheme: dark) {
+  .status.broken {
+    color: var(--bg);
+  }
+}
+
+.status.never {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+/* The error the publisher gave, which is the bit worth acting on. */
+.error-detail {
+  flex: 1 1 20rem;
+  min-width: 0;
+  color: var(--danger);
+  font: 0.8rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+ul.feeds li.broken {
+  border-color: var(--danger);
+}

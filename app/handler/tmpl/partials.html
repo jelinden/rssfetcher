@@ -39,3 +39,22 @@
 {{- end}}
 
 {{define "csrf"}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}
+
+{{/*
+feedstatus renders what the fetcher last saw. It takes a domain.Feed, so the view
+uses {{template "feedstatus" .}} inside the range and the edit page
+{{template "feedstatus" .Feed}}. A broken subscription used to look exactly like
+a working one here.
+*/}}
+{{define "feedstatus"}}
+{{- if .Failing -}}
+<span class="status broken">failing</span>
+<span class="error-detail">{{.LastError}}</span>
+<span class="meta">{{.Failures}} consecutive failures{{with .LastErrorAt}}, last seen {{.UTC.Format "2006-01-02 15:04 UTC"}}</span>{{end}}
+{{- else if .NeverChecked -}}
+<span class="status never">never checked</span>
+{{- else -}}
+<span class="status ok">ok</span>
+<span class="meta">{{.LastItems}} new{{with .OKAt}}, fetched {{.UTC.Format "2006-01-02 15:04 UTC"}}</span>{{end}}
+{{- end -}}
+{{end}}

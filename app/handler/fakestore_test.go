@@ -46,6 +46,15 @@ type fakeStore struct {
 	lastSessionExtended    bool
 	lastSessionExtendedFor string
 
+	// Recorded calls of FetchOne (the "check now" button).
+	checkCalls     int
+	checkID        bson.ObjectID
+	checkDeadline  time.Time
+	checkErr       error
+	checkBlocks    bool // only returns when its context is done
+	checkItems     int
+	checkUnchanged bool
+
 	feedsErr       error
 	feedErr        error
 	saveErr        error
@@ -59,6 +68,7 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore {
 	store := &fakeStore{
+		checkItems:    2,
 		feeds:         map[bson.ObjectID]domain.Feed{},
 		categories:    map[string]rss.Category{},
 		subCategories: map[string]rss.SubCategory{},
@@ -134,6 +144,31 @@ func (f *fakeStore) SaveFeedItem(ctx context.Context, feed domain.Feed) error {
 	f.savedFeeds = append(f.savedFeeds, domain.FeedInput{ID: feed.ID, Name: feed.Name, URL: feed.URL})
 	f.feeds[feed.ID] = feed
 	return nil
+}
+
+// FetchOne records what the "check now" button asked for, including whether the
+// handler gave the call a deadline.
+func (f *fakeStore) FetchOne(ctx context.Context, feedID string, _ ...rss.FetchFunc) (mongo.FetchReport, error) {
+	id, err := mongo.ParseObjectID(feedID)
+	if err != nil {
+		return mongo.FetchReport{}, err
+	}
+	f.checkCalls++
+	f.checkID = id
+	if deadline, ok := ctx.Deadline(); ok {
+		f.checkDeadline = deadline
+	}
+	if f.checkBlocks {
+		<-ctx.Done()
+		return mongo.FetchReport{}, ctx.Err()
+	}
+	if _, ok := f.feeds[id]; !ok {
+		return mongo.FetchReport{}, mongo.ErrNotFound
+	}
+	if f.checkErr != nil {
+		return mongo.FetchReport{}, f.checkErr
+	}
+	return mongo.FetchReport{Items: f.checkItems, Unchanged: f.checkUnchanged}, nil
 }
 
 func (f *fakeStore) Categories(ctx context.Context) ([]rss.Category, error) {
@@ -453,7 +488,18 @@ func seedFeed(store *fakeStore, feed domain.Feed) bson.ObjectID {
 
 func authenticatedClient(t *testing.T, store *fakeStore) *client {
 	t.Helper()
-	c := newClient(t, testHandler(t, store))
+	return authenticatedClientWithOptions(t, store, nil)
+}
+
+// authenticatedClientWithOptions logs in and returns a client whose handler was
+// built with the default test options, adjusted by tune.
+func authenticatedClientWithOptions(t *testing.T, store *fakeStore, tune func(*Options)) *client {
+	t.Helper()
+	opts := testOptions()
+	if tune != nil {
+		tune(&opts)
+	}
+	c := newClient(t, Recoverer(mustNew(t, store, testTemplates(t), opts).Routes()))
 	rec := c.login()
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("login failed: %d %s", rec.Code, rec.Body.String())
