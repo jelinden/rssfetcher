@@ -422,3 +422,48 @@ func TestSeedAdminUserReportsHasAdminUsersFailure(t *testing.T) {
 		t.Fatal("want the counting failure to surface")
 	}
 }
+
+// The start scripts document MONGO_URI as the way to point the app at a
+// database, and passing a URI with credentials as a flag would publish them in
+// ps(1). So the URI is read from the environment when -address is not given.
+func TestMongoURIFromTheEnvironment(t *testing.T) {
+	const uri = "mongodb://reader:s3cr3t@db.internal:27017/appdb"
+	t.Setenv("MONGO_URI", uri)
+
+	cfg := config{}
+	fs := flag.NewFlagSet("rssfetcher", flag.ContinueOnError)
+	registerFlags(fs, &cfg)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.mongoURI != uri {
+		t.Errorf("-address default = %q, want the MONGO_URI %q", cfg.mongoURI, uri)
+	}
+
+	// A flag still wins over the environment.
+	t.Setenv("MONGO_URI", uri)
+	flagged := config{}
+	fs2 := flag.NewFlagSet("rssfetcher", flag.ContinueOnError)
+	registerFlags(fs2, &flagged)
+	if err := fs2.Parse([]string{"-address", "mongodb://127.0.0.1:27017"}); err != nil {
+		t.Fatal(err)
+	}
+	if flagged.mongoURI != "mongodb://127.0.0.1:27017" {
+		t.Errorf("-address was not honoured over MONGO_URI: %q", flagged.mongoURI)
+	}
+}
+
+// Without the variable the historic default stands, so a bare ./rssfetcher on a
+// developer machine still finds a local mongod.
+func TestMongoURIEnvDefaultWithoutTheVariable(t *testing.T) {
+	t.Setenv("MONGO_URI", "")
+	cfg := config{}
+	fs := flag.NewFlagSet("rssfetcher", flag.ContinueOnError)
+	registerFlags(fs, &cfg)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.mongoURI != "mongodb://localhost:27017" {
+		t.Errorf("-address default = %q, want mongodb://localhost:27017", cfg.mongoURI)
+	}
+}

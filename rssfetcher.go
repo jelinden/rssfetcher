@@ -107,6 +107,19 @@ func (c config) cycleTimeout() time.Duration {
 	return defaultFetchTimeout
 }
 
+// csrfSecretWarning explains what happens when no CSRF secret is configured. It
+// is a function rather than an inline log call so the wording is testable, and it
+// is worth a line at startup: signing keys that change every boot are a
+// deliberate choice, not something the process should decide quietly.
+func (c config) csrfSecretWarning() string {
+	if strings.TrimSpace(c.authSecret) != "" {
+		return ""
+	}
+	return "no -auth-secret / RSSFETCHER_AUTH_SECRET is set: CSRF tokens are signed " +
+		"with a key generated for this process, so forms left open across a restart " +
+		"will be rejected - set one deliberately (for example: openssl rand -hex 32)"
+}
+
 // validate rejects flag combinations that would silently do the wrong thing.
 func (c config) validate() error {
 	// Zero means "not configured": applyFetchPolicy turns it into the package
@@ -145,7 +158,9 @@ func (c config) applyFetchPolicy() {
 }
 
 func registerFlags(f *flag.FlagSet, c *config) {
-	f.StringVar(&c.mongoURI, "address", "mongodb://localhost:27017", "mongo connection URI")
+	// MONGO_URI rather than a flag in the scripts: a URI carries
+	// user:password, and argv is world readable through ps(1).
+	f.StringVar(&c.mongoURI, "address", envOr("MONGO_URI", "mongodb://localhost:27017"), "mongo connection URI (defaults to $MONGO_URI)")
 	f.StringVar(&c.database, "database", "", "mongo database name; defaults to the one in -address, then "+mongo.DefaultDatabase)
 	f.StringVar(&c.env, "env", "dev", "environment (dev|prod)")
 	f.StringVar(&c.addr, "listen", ":9200", "http listen address")
@@ -242,6 +257,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("starting up: %v", err)
 	}
+	if warning := cfg.csrfSecretWarning(); warning != "" {
+		log.Println("rssfetcher: " + warning)
+	}
+
 	cfg.applyFetchPolicy()
 	if err := cfg.validate(); err != nil {
 		log.Fatalf("invalid configuration: %v", err)
