@@ -19,6 +19,7 @@
 #   RSSFETCHER_MAX_FEED_TTL      ceiling on a feed's own <ttl> (default 15m; 0
 #                                honours the publisher exactly)
 #   RSSFETCHER_FETCH_TIMEOUT     deadline of one cycle       (default 2m)
+#   RSSFETCHER_CHECK_TIMEOUT     deadline of "check now"     (default 30s)
 #   RSSFETCHER_MAX_ITEMS         items stored per feed       (default 25)
 #   RSSFETCHER_COOKIE_SECURE     set "true" when serving over HTTPS
 #   RSSFETCHER_IGNORE_FEED_TTL   set "true" to poll every feed on every cycle,
@@ -72,6 +73,7 @@ args=(
 	-listen "${RSSFETCHER_LISTEN:-0.0.0.0:9200}"
 	-interval "${RSSFETCHER_INTERVAL:-80s}"
 	-fetch-timeout "${RSSFETCHER_FETCH_TIMEOUT:-2m}"
+	-check-timeout "${RSSFETCHER_CHECK_TIMEOUT:-30s}"
 	-max-items-per-feed "${RSSFETCHER_MAX_ITEMS:-25}"
 	-honour-feed-ttl="$([ "${RSSFETCHER_IGNORE_FEED_TTL:-false}" = "true" ] && echo false || echo true)"
 	-cookie-secure="$cookie_secure"

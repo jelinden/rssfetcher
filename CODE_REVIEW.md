@@ -640,3 +640,30 @@ back, and the row reads:
 ```
 marketwatch  ok  10 new, fetched 2026-11-19 09:23 UTC  next poll in 15m
 ```
+
+## Running it after logout
+
+`RSSFETCHER_BACKGROUND=true ./start-prod.sh` uses `nohup`, which ignores `SIGHUP` -
+the signal a logout sends. Verified on a live start: after the script returns, the
+server has no controlling terminal (`ps -o tty=` reports `??`) and is parented to
+`init`, and it still answers `/view/` after `kill -HUP <pid>`.
+
+Two things nohup cannot do, which is why `deploy/` exists:
+
+* nothing starts the server again after a reboot;
+* a systemd login session with `KillUserProcesses=yes` sends `SIGTERM` to the
+  session's processes when it ends, and nohup has no answer to that.
+  `loginctl enable-linger $USER` avoids it, `systemd enable --now rssfetcher`
+  does not need it.
+
+`deploy/rssfetcher.service` therefore runs the binary in the foreground
+(`Type=simple`, no `RSSFETCHER_BACKGROUND`), takes its credentials from
+`EnvironmentFile=/etc/rssfetcher/env` instead of `ExecStart` (argv is world
+readable), and sets `TimeoutStopSec=180` so that shutdown - which waits up to the
+two minute cycle deadline for an in-flight bulk write to finish - is not killed
+halfway through one. `deploy/env.example` holds no values, and a test asserts both
+that the secret-named entries are empty and that every variable it names is one the
+program reads, so the template cannot drift into teaching people to set something
+inert. The unit's flags were run against the real binary rather than assumed
+correct (`-interval 80s` there clamps the derived jitter to 20s, which is the other
+fix on this page).

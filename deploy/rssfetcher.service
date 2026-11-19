@@ -1,0 +1,74 @@
+# rssfetcher as a service.
+#
+#   sudo cp deploy/rssfetcher.service /etc/systemd/system/
+#   sudo cp deploy/env.example /etc/rssfetcher/env && sudo chmod 600 /etc/rssfetcher/env
+#   sudo systemctl daemon-reload && sudo systemctl enable --now rssfetcher
+#   journalctl -u rssfetcher -f
+#
+# Why a unit and not the background mode of start-prod.sh: nohup survives a logout
+# (it ignores SIGHUP) but not a reboot, and a systemd-logind session configured with
+# KillUserProcesses=yes terminates what is left when the session ends - which nohup
+# cannot ignore, because it arrives as SIGTERM. A service also starts after a restart
+# of the machine, before anyone logs in.
+#
+# Type=simple: the binary stays in the foreground so systemd owns the process,
+# sees its stdout in the journal and can restart it. RSSFETCHER_BACKGROUND must
+# not be used here - it would detach the server from under its supervisor.
+
+[Unit]
+Description=rssfetcher - RSS feed fetcher and admin UI
+Documentation=https://github.com/jelinden/rssfetcher
+After=network-online.target
+Wants=network-online.target
+# If MongoDB runs on this host too, give it a head start. The binary retries the
+# connection on its own, so this is about startup noise, not correctness.
+After=mongod.service
+
+[Service]
+Type=simple
+User=rssfetcher
+Group=rssfetcher
+WorkingDirectory=/opt/rssfetcher
+
+# MONGO_URI (with its credentials), RSSFETCHER_ADMIN_USER,
+# RSSFETCHER_ADMIN_PASSWORD and RSSFETCHER_AUTH_SECRET live here, in a file that
+# is readable only by root - never in ExecStart, which is world readable through
+# ps(1) and ends up in bug reports and journal copies.
+EnvironmentFile=/etc/rssfetcher/env
+
+# Everything else is policy, and visible in ps output because none of it is secret.
+# Change the schedule here rather than in the environment file: systemd passes no
+# -flags it does not list, so RSSFETCHER_INTERVAL and friends below the credentials
+# have no effect on this service.
+ExecStart=/opt/rssfetcher/rssfetcher \
+	-env prod \
+	-listen 127.0.0.1:9200 \
+	-interval 80s \
+	-max-feed-ttl 15m \
+	-check-timeout 30s \
+	-cookie-secure=true
+
+Restart=always
+RestartSec=5
+
+# Shutdown deliberately lets an in-flight fetch cycle finish its bulk write before
+# disconnecting the mongo client, which takes up to the cycle deadline (2 minutes
+# by default). If this is shorter, systemd sends SIGKILL halfway through a write.
+TimeoutStopSec=180
+KillSignal=SIGINT
+
+# The process needs no writes anywhere except its own state directory, and no
+# privileged operations at all.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# The server writes nothing to disk except its log to stdout, so there is no
+# ReadWritePaths to grant and no state directory to prepare.
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

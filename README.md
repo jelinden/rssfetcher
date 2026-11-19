@@ -31,8 +31,47 @@ That runs the server under `nohup`, writes its pid to `run/rssfetcher.pid`
 (the script refuses to start a second instance while that pid is alive) and
 appends output to `rssfetcher.log`. Both paths are git-ignored.
 
+### Keeping it running after you log out
+
+`nohup` (what `RSSFETCHER_BACKGROUND=true` uses) ignores `SIGHUP`, which is what a
+logout sends, so the server survives closing the terminal. Verified: after the
+start the process has no controlling terminal and is parented to `init`, and it is
+still answering requests after `kill -HUP <pid>`.
+
+That is not the same as running as a service, and two things will still bite:
+
+* nothing starts it after a reboot;
+* on a systemd host, a login session with `KillUserProcesses=yes` (the default on
+  some distributions) terminates whatever is left when the session ends, and that
+  arrives as `SIGTERM`, which `nohup` cannot ignore. `loginctl enable-linger $USER`
+  keeps your session alive, but a service is the honest answer.
+
+So there is a unit file. It runs the binary in the foreground (`Type=simple`)
+because systemd must own the process to restart it and to collect its stdout in
+the journal, and it reads credentials from a file rather than `ExecStart`:
+
+```sh
+sudo install -d /etc/rssfetcher
+sudo install -m 600 deploy/env.example /etc/rssfetcher/env   # then edit it
+sudo install -d /opt/rssfetcher && go build -o /opt/rssfetcher/rssfetcher rssfetcher.go
+sudo cp deploy/rssfetcher.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now rssfetcher
+journalctl -u rssfetcher -f
+```
+
+`RSSFETCHER_BACKGROUND` must stay out of the unit: detaching the server from under
+its supervisor makes systemd think the service exited and leaves the real process
+untracked. `TimeoutStopSec` in the unit is deliberately longer than the fetch cycle
+deadline, because shutdown waits for an in-flight bulk write to finish, and a
+`SIGKILL` there is how a feed ends up half stored.
+
+A third option, if you just want it up while you work on the box: `tmux new -s
+rssfetcher` (or `screen`) and run `./start-prod.sh` inside it — the session
+survives the disconnect, and you get the log in the foreground anyway.
+
 Credentials come from the environment, and the recommended place to keep them is
-a `chmod 600` `.env` file, which is git-ignored:
+a `chmod 600` `.env` file, which is git-ignored (`deploy/env.example` is the
+template with nothing in it):
 
 ```sh
 set -a; . ./.env; set +a; ./start-prod.sh
