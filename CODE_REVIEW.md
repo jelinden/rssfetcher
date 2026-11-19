@@ -604,3 +604,39 @@ document is XML containing HTML named entities. Rewriting the common ones to num
 references before parsing would rescue that subscription, but it means second-guessing
 a document that is technically malformed, and doing it inside a `CDATA` section would
 corrupt content - so it needs its own tests and a flag, not a quick fix.
+
+## Regression: the polling cadence (reported by the user)
+
+Feeds appeared to update only when the process was restarted. The scheduler was
+not broken - `-interval 10s -no-jitter` produces a cycle every ten seconds with
+the loop ticking normally - the *defaults* had moved, twice over:
+
+|  | before | after my rewrite |
+| --- | --- | --- |
+| prod interval | 80s (binary default, script passed nothing) | 20m binary default, and `start-prod.sh` passed `-interval ${RSSFETCHER_INTERVAL:-6h}` |
+| per-feed `<ttl>` | not honoured, every feed polled every cycle | honoured by default, so a feed publishing `<ttl>60</ttl>` waits an hour |
+
+80 seconds to six hours is a factor of 270, and I documented it in a table nobody
+reads at 2am when the feeds look dead. That is a regression I introduced, and the
+fix is behavioural rather than technical:
+
+* `start-prod.sh` defaults to `-interval 80s` again (pinned by
+  `TestStartProdDefaultPollsAsOftenAsItAlwaysDid`), so upgrading changes nothing.
+* New `-max-feed-ttl` (default `0` = honour the publisher exactly, `15m` in the
+  script): respecting a `<ttl>` is polite, but a publisher asking for a week
+  cannot be allowed to starve a news reader. The cap is applied at decision time,
+  so the stored `ttl` stays what the publisher actually said.
+* A derived `-interval-jitter` is clamped to a quarter of the interval. Passing
+  `-interval 40s` used to be a startup error in prod (`-interval-jitter 2m must be
+  smaller than -interval 40s`) - the F2 validation was right about an explicitly
+  requested combination and wrong about one the operator never asked for.
+* The feed list now says `next poll in 15m` on the row, computed with the same
+  policy the loop uses, so "why is this not moving" is answerable from the page.
+
+Verified live: a feed publishing `<ttl>60</ttl>` with `-max-feed-ttl 5s` is polled
+on every cycle (`11:22:32`, `11:22:43`, `11:22:58`), with the cap off it is held
+back, and the row reads:
+
+```
+marketwatch  ok  10 new, fetched 2026-11-19 09:23 UTC  next poll in 15m
+```

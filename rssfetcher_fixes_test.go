@@ -234,3 +234,34 @@ func TestJitterFlagDistinguishesZeroFromUnset(t *testing.T) {
 		t.Errorf("a sane jitter was rejected: %v", err)
 	}
 }
+
+// Lowering -interval used to fail startup, because the jitter that goes with the
+// environment (2m in prod) was then larger than the interval and validation
+// rejected the combination. Nobody asks for that: the derived default has to fit
+// the schedule it was derived for, and only a jitter that was actually written
+// down should be argued about.
+func TestShortIntervalDoesNotContradictTheDefaultJitter(t *testing.T) {
+	cfg := config{env: "prod", fetchEvery: 40 * time.Second, maxItems: 25}
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("a short interval with the default jitter: %v", err)
+	}
+	j := cfg.jitter()
+	if j <= 0 {
+		t.Fatal("clamping removed the jitter entirely")
+	}
+	if j >= cfg.interval() {
+		t.Errorf("jitter %s is not smaller than the interval %s", j, cfg.interval())
+	}
+	if j > defaultFetchJitter {
+		t.Errorf("jitter %s exceeds the configured default %s", j, defaultFetchJitter)
+	}
+
+	// An explicit jitter is a request, not a default, so nonsense is still refused.
+	explicit := config{env: "prod", fetchEvery: 40 * time.Second, fetchJitter: 5 * time.Minute, maxItems: 25}
+	if err := explicit.validate(); err == nil {
+		t.Error("-interval-jitter larger than -interval was accepted")
+	}
+	if got := (config{env: "prod", fetchEvery: 10 * time.Second, fetchJitter: 5 * time.Second}).jitter(); got != 5*time.Second {
+		t.Errorf("explicit jitter was clamped to %s, want it kept", got)
+	}
+}

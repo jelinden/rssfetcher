@@ -41,6 +41,31 @@ func TestStartProdScriptRunsBothWays(t *testing.T) {
 	}
 }
 
+// The prod deployment polled every 80 seconds before any of this existed. Raising
+// that silently is what made the feeds look dead between restarts, so the default
+// is pinned here rather than left to taste.
+func TestStartProdDefaultPollsAsOftenAsItAlwaysDid(t *testing.T) {
+	data, err := os.ReadFile("start-prod.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `-interval "${RSSFETCHER_INTERVAL:-80s}"`) {
+		t.Error("start-prod.sh no longer defaults to the 80s cadence of the original deployment")
+	}
+	// The jitter is only passed when configured, so the binary can clamp its own
+	// default to whatever interval the operator chose.
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "-interval-jitter") && !strings.Contains(line, "RSSFETCHER_JITTER") {
+			t.Errorf("start-prod.sh passes a hardcoded jitter: %s", strings.TrimSpace(line))
+		}
+	}
+	// And a publisher cannot starve the list with a silly <ttl>.
+	if !strings.Contains(text, `-max-feed-ttl "${RSSFETCHER_MAX_FEED_TTL:-`) {
+		t.Error("start-prod.sh does not cap the per-feed <ttl>")
+	}
+}
+
 // The documented way to feed these scripts is a .env file, so that file must be
 // impossible to commit by accident: it holds the admin password, the CSRF secret
 // and the mongo URI with its credentials.

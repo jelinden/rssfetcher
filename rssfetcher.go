@@ -46,6 +46,7 @@ type config struct {
 	fetchOnStart     bool
 	maxItems         int
 	allowPrivateURLs bool
+	maxFeedTTL       time.Duration // ceiling on what a publisher's <ttl> may demand
 	keepFeedTTL      bool
 	adminUser        string
 	adminPassword    string
@@ -85,6 +86,10 @@ func (c config) interval() time.Duration {
 // Turning jitter off is a separate boolean rather than "-interval-jitter 0",
 // because a zero flag default makes 0 indistinguishable from "not set" - the
 // documented way of disabling it would silently have done nothing.
+// jitter is the spread applied to the interval. A configured value is used as
+// given (validate rejects nonsense); the value derived from -env is capped at a
+// quarter of the interval, because a default must never contradict a schedule the
+// operator asked for.
 func (c config) jitter() time.Duration {
 	if c.noJitter {
 		return 0
@@ -92,10 +97,19 @@ func (c config) jitter() time.Duration {
 	if c.fetchJitter > 0 {
 		return c.fetchJitter
 	}
-	if c.env == "dev" {
-		return devFetchJitter
+	spread := devFetchJitter
+	if c.env != "dev" {
+		spread = defaultFetchJitter
 	}
-	return defaultFetchJitter
+	// The default must fit the interval it is applied to: a two minute spread on a
+	// forty second schedule is not a spread, it is a startup error.
+	if max := c.interval() / 4; spread > max {
+		spread = max
+	}
+	if spread < 0 {
+		return 0
+	}
+	return spread
 }
 
 // cycleTimeout bounds one fetch cycle. It is deliberately not the interval: a
@@ -131,8 +145,13 @@ func (c config) validate() error {
 	if c.fetchJitter < 0 {
 		return fmt.Errorf("-interval-jitter must not be negative, got %s", c.fetchJitter)
 	}
-	if jitter := c.jitter(); jitter > 0 && c.interval() <= jitter {
-		return fmt.Errorf("-interval-jitter %s must be smaller than -interval %s", jitter, c.interval())
+	// Only an explicitly configured jitter is argued about; the one derived from
+	// -env is clamped to fit, so lowering -interval cannot fail to start.
+	if c.fetchJitter > 0 && c.interval() <= c.fetchJitter {
+		return fmt.Errorf("-interval-jitter %s must be smaller than -interval %s", c.fetchJitter, c.interval())
+	}
+	if c.maxFeedTTL < 0 {
+		return fmt.Errorf("-max-feed-ttl must not be negative, got %s", c.maxFeedTTL)
 	}
 	if c.env != "dev" && c.env != "prod" {
 		return fmt.Errorf("-env must be dev or prod, got %q", c.env)
@@ -173,6 +192,7 @@ func registerFlags(f *flag.FlagSet, c *config) {
 	f.BoolVar(&c.fetchOnStart, "fetch-on-start", true, "refresh all feeds once at startup")
 	f.IntVar(&c.maxItems, "max-items-per-feed", rss.DefaultMaxItemsPerFeed, "newest items stored per feed")
 	f.BoolVar(&c.keepFeedTTL, "honour-feed-ttl", true, "respect a feed's <ttl> and skip it until that period has passed")
+	f.DurationVar(&c.maxFeedTTL, "max-feed-ttl", 0, "cap on the per-feed <ttl> a publisher may impose (0 honours it exactly; try 15m for a news reader)")
 	f.BoolVar(&c.allowPrivateURLs, "allow-private-urls", false, "allow feeds that resolve to loopback or private networks (SSRF guard off); only for deliberately internal setups")
 
 	f.StringVar(&c.adminUser, "admin-user", envOr("RSSFETCHER_ADMIN_USER", ""), "username of the admin account to seed on first start (no default)")
@@ -271,6 +291,7 @@ func main() {
 	database := resolveDatabase(cfg.mongoURI, cfg.database)
 	store := mongo.NewStore(client, database)
 	store.SetHonourFeedTTL(cfg.keepFeedTTL)
+	store.SetMaxFeedTTL(cfg.maxFeedTTL)
 
 	// Bind the listen address before anything is written to the database: a
 	// stale instance still holding the port used to make this process seed an
@@ -381,6 +402,10 @@ func (c config) handlerOptions() handler.Options {
 		AuthSecret:     c.authSecret,
 		TrustProxy:     c.trustProxy,
 		RefetchTimeout: c.checkTimeout,
+		// The UI shows when a feed will be polled again, so it needs the same
+		// policy the loop applies.
+		HonourFeedTTL: c.keepFeedTTL,
+		MaxFeedTTL:    c.maxFeedTTL,
 	}
 }
 

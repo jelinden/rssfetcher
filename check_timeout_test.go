@@ -42,3 +42,33 @@ func TestCheckTimeoutReachesTheHandler(t *testing.T) {
 		t.Errorf("handlerOptions() dropped part of the config: %+v", opts)
 	}
 }
+
+// The prod cadence is the whole product: a news reader that polls every six hours
+// looks broken. The rewrite raised the interval far above what the deployment
+// actually did (80s) and added per-feed <ttl> honouring on top, so this pins both
+// the flag and the cap that keeps a publisher from starving the others.
+func TestMaxFeedTTLFlagAndValidation(t *testing.T) {
+	cfg := config{}
+	fs := flag.NewFlagSet("rssfetcher", flag.ContinueOnError)
+	registerFlags(fs, &cfg)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.maxFeedTTL != 0 {
+		t.Errorf("default -max-feed-ttl = %v, want 0 (honour the publisher exactly)", cfg.maxFeedTTL)
+	}
+
+	if err := fs.Parse([]string{"-max-feed-ttl", "15m"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.validate(); err != nil {
+		t.Errorf("validate() with a cap: %v", err)
+	}
+
+	if err := fs.Parse([]string{"-max-feed-ttl", "-1m"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.validate(); err == nil {
+		t.Error("a negative -max-feed-ttl was accepted")
+	}
+}

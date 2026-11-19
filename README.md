@@ -57,12 +57,13 @@ Or directly, for a run with no secrets involved:
 | `-database`          | `news`                      | database name (the database in the URI wins)                        |
 | `-listen`            | `:9200`                     | HTTP listen address                                                 |
 | `-env`               | `dev`                       | `dev` refreshes every 2m, `prod` every 20m                          |
-| `-interval`          | *(derived from `-env`)*     | explicit refresh interval, e.g. `30s`                               |
+| `-interval`          | `2m` dev / `20m` prod, and `80s` in `start-prod.sh` | how often a cycle runs                |
 | `-interval-jitter`   | `10s` / `2m`                | random ± spread on the interval, so a restart does not hit every publisher at once |
 | `-no-jitter`         | `false`                     | poll on an exact interval (a duration flag cannot tell "0" from "unset", so this is a boolean) |
 | `-fetch-timeout`     | `2m`                        | deadline of one fetch cycle, independent of `-interval`              |
 | `-check-timeout`     | `30s`                       | how long a "check now" request in the UI may take                    |
 | `-honour-feed-ttl`   | `true`                      | skip a feed until the `<ttl>` it published has passed                |
+| `-max-feed-ttl`      | `0` (no cap)                | ceiling on that window, e.g. `15m` - a publisher asking for a week otherwise means a week |
 | `-max-items-per-feed`| `25`                        | newest items stored per feed                                        |
 | `-allow-private-urls`| `false`                     | let feeds resolve to loopback/RFC1918 addresses (SSRF guard off)     |
 | `-templates`         | *(embedded)*                | read templates from disk instead                                    |
@@ -110,6 +111,11 @@ subscription is visible in the admin UI instead of only in the server log:
 | `failures`    | consecutive failures, so "newly broken" differs from "broken for a week" |
 | `okAt`        | the last attempt that worked                                         |
 | `lastItems`   | how many *new* items the last fetch with a body wrote (a re-fetch of known items writes none) |
+
+A feed that is not polled is explained as well: when `-honour-feed-ttl` is on, a
+row whose publisher asked for more time says `next poll in 15m`, using the same
+`-max-feed-ttl` cap the loop applies. Without that line a row that has not moved
+in an hour is indistinguishable from a broken one.
 
 The feed list shows a `failing` badge with the message, an `ok` badge with the
 item count and fetch time, or `never checked` for a feed that has not been polled
@@ -206,6 +212,26 @@ served from `/static/style.css`. Pass `-templates <dir>` to render on-disk
 templates instead (handy for tweaking the markup without a rebuild).
 
 ## Upgrading from the first version
+
+**The polling cadence changed, and this is the one to read.** The original
+`start-prod.sh` passed no `-interval`, so it inherited the binary's `-env prod`
+value of **80 seconds**. The rewrite made the prod default 20 minutes and the
+script passed `-interval ${RSSFETCHER_INTERVAL:-6h}` on top, and
+`-honour-feed-ttl` then pushed individual feeds out further still - so feeds
+appeared to update only at restart. The script now defaults to the 80 seconds it
+always had, with `-max-feed-ttl 15m` so a publisher cannot hold a feed back for a
+day. If you are upgrading and want the old behaviour exactly:
+
+```sh
+RSSFETCHER_INTERVAL=80s RSSFETCHER_MAX_FEED_TTL=0 ./start-prod.sh   # ttl honoured, capped never
+RSSFETCHER_IGNORE_FEED_TTL=true ./start-prod.sh                     # poll every feed every cycle
+```
+
+`-interval-jitter` is now clamped to a quarter of the interval when it is left
+alone, so lowering `-interval` cannot fail to start the process. An explicitly
+given jitter that is too large is still refused, because that is a mistake rather
+than a default.
+
 
 Two stored fields changed shape, and both are self-healing on the next fetch:
 

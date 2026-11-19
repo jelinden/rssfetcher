@@ -11,12 +11,18 @@
 #
 # Optional:
 #   RSSFETCHER_LISTEN            listen address              (default :9200)
-#   RSSFETCHER_INTERVAL          fetch interval              (default 6h)
+#   RSSFETCHER_INTERVAL          fetch interval              (default 80s, as it
+#                                always was in this deployment - a news reader
+#                                that polls every six hours looks broken)
+#   RSSFETCHER_JITTER            random +/- spread on the interval (the binary
+#                                derives one from -env when this is unset)
+#   RSSFETCHER_MAX_FEED_TTL      ceiling on a feed's own <ttl> (default 15m; 0
+#                                honours the publisher exactly)
 #   RSSFETCHER_FETCH_TIMEOUT     deadline of one cycle       (default 2m)
 #   RSSFETCHER_MAX_ITEMS         items stored per feed       (default 25)
 #   RSSFETCHER_COOKIE_SECURE     set "true" when serving over HTTPS
 #   RSSFETCHER_IGNORE_FEED_TTL   set "true" to poll every feed on every cycle,
-#                                ignoring the <ttl> a feed publishes
+#                                ignoring the <ttl> a feed publishes altogether
 #   RSSFETCHER_BACKGROUND        set "true" to detach from the terminal
 #
 # By default the server stays in the foreground, which is what systemd
@@ -53,10 +59,18 @@ go build -mod=vendor -trimpath -ldflags "-s -w" -o rssfetcher rssfetcher.go
 
 cookie_secure="${RSSFETCHER_COOKIE_SECURE:-false}"
 
+# Only passed when asked for: the binary clamps its own default to the interval,
+# and a hardcoded jitter would turn a short RSSFETCHER_INTERVAL into a startup
+# error.
+if [ -n "${RSSFETCHER_JITTER:-}" ]; then
+	args+=(-interval-jitter "$RSSFETCHER_JITTER")
+fi
+
 args=(
 	-env prod
+	-max-feed-ttl "${RSSFETCHER_MAX_FEED_TTL:-15m}"
 	-listen "${RSSFETCHER_LISTEN:-0.0.0.0:9200}"
-	-interval "${RSSFETCHER_INTERVAL:-6h}"
+	-interval "${RSSFETCHER_INTERVAL:-80s}"
 	-fetch-timeout "${RSSFETCHER_FETCH_TIMEOUT:-2m}"
 	-max-items-per-feed "${RSSFETCHER_MAX_ITEMS:-25}"
 	-honour-feed-ttl="$([ "${RSSFETCHER_IGNORE_FEED_TTL:-false}" = "true" ] && echo false || echo true)"
