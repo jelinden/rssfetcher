@@ -72,3 +72,51 @@ func TestFeedStatusAge(t *testing.T) {
 		t.Errorf("StatusAge without a timestamp = %v, want 0", got)
 	}
 }
+
+// A publisher asking for a refresh interval of a week is polite to say and ruinous
+// for a news reader, so the fetcher can cap what it honours. The UI has to show the
+// same number the fetcher uses, or a row that looks stuck is not explainable.
+func TestFeedEffectiveTTL(t *testing.T) {
+	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name    string
+		feed    Feed
+		maxTTL  time.Duration
+		wantDue time.Duration // 0 means due now
+	}{
+		{name: "never fetched", feed: Feed{}, wantDue: 0},
+		{name: "no ttl published", feed: Feed{FetchedAt: now.Add(-time.Minute)}, wantDue: 0},
+		{
+			name:    "ttl honoured exactly when there is no cap",
+			feed:    Feed{FetchedAt: now.Add(-5 * time.Minute), TTL: time.Hour},
+			wantDue: 55 * time.Minute,
+		},
+		{
+			name:    "ttl capped",
+			feed:    Feed{FetchedAt: now.Add(-5 * time.Minute), TTL: time.Hour},
+			maxTTL:  15 * time.Minute,
+			wantDue: 10 * time.Minute,
+		},
+		{
+			name:    "cap shorter than what already passed",
+			feed:    Feed{FetchedAt: now.Add(-20 * time.Minute), TTL: time.Hour},
+			maxTTL:  15 * time.Minute,
+			wantDue: 0,
+		},
+		{
+			// The fetch was recorded ahead of the clock we now believe (an NTP
+			// correction after startup). Held back for one ttl, not for the skew
+			// plus the ttl.
+			name:    "a future fetchedAt (clock skew) postpones at most one ttl",
+			feed:    Feed{FetchedAt: now.Add(time.Hour), TTL: time.Minute},
+			wantDue: time.Minute,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.feed.DueIn(now, tc.maxTTL); got != tc.wantDue {
+				t.Errorf("DueIn(%v) = %v, want %v", tc.maxTTL, got, tc.wantDue)
+			}
+		})
+	}
+}

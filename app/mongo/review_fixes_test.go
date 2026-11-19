@@ -482,3 +482,87 @@ func TestSaveFeedRejectsADuplicateSubscription(t *testing.T) {
 		t.Errorf("re-subscribing a removed feed's URL: %v", err)
 	}
 }
+
+// A publisher whose <ttl> is a week (some do) used to be polled on the global
+// interval; once the ttl is honoured it would only be fetched weekly, which no
+// news reader survives. The cap is what limits that, and it has to be applied
+// before deciding whether the feed is due.
+func TestFeedsDueForFetchCapsTheTTL(t *testing.T) {
+	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	feeds := []domain.Feed{
+		{ID: bson.NewObjectID(), Name: "greedy", URL: "https://a.example/feed", FetchedAt: now.Add(-10 * time.Minute), TTL: 24 * time.Hour},
+		{ID: bson.NewObjectID(), Name: "modest", URL: "https://b.example/feed", FetchedAt: now.Add(-10 * time.Minute), TTL: 5 * time.Minute},
+		{ID: bson.NewObjectID(), Name: "fresh", URL: "https://c.example/feed", FetchedAt: now.Add(-1 * time.Minute), TTL: 5 * time.Minute},
+		{ID: bson.NewObjectID(), Name: "untouched", URL: "https://d.example/feed"},
+	}
+
+	// No cap: only the two that have waited their own ttl.
+	due := FeedsDueForFetch(feeds, now, 0)
+	if names := feedNames(due); len(names) != 2 || !contains(names, "modest") || !contains(names, "untouched") {
+		t.Errorf("uncapped due = %v, want modest+untouched", names)
+	}
+
+	// Capped at 2m: everything except the one fetched a minute ago.
+	due = FeedsDueForFetch(feeds, now, 2*time.Minute)
+	if names := feedNames(due); len(names) != 3 || contains(names, "fresh") {
+		t.Errorf("capped due = %v, want all but the freshly fetched one", names)
+	}
+}
+
+// The store has to apply the configured cap, not just expose a pure function.
+func TestStoreMaxFeedTTLCapsPolling(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t)
+	store.SetHonourFeedTTL(true)
+	store.SetMaxFeedTTL(time.Minute)
+
+	feed := seedFeedDoc(t, store, domain.Feed{Name: "greedy", URL: "http://cap.example/feed.xml"})
+	// Ten minutes old content with a publisher asking for a day.
+	if err := store.RecordFetch(ctx, feed.ID, FetchOutcome{ETag: `"e"`, TTL: 24 * time.Hour, Items: 1}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Feed(ctx, feed.ID.Hex())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	called := 0
+	fetcher := func(context.Context, rss.FeedRequest) (*rss.FeedResponse, error) {
+		called++
+		return &rss.FeedResponse{Feed: testFeed("http://cap.example/feed.xml")}, nil
+	}
+	loaded.FetchedAt = time.Now().Add(-5 * time.Minute)
+	if _, err := store.FetchNews(ctx, []domain.Feed{*loaded}, fetcher); err != nil {
+		t.Fatal(err)
+	}
+	if called != 1 {
+		t.Errorf("fetcher called %d times, want the cap to make the feed due again", called)
+	}
+
+	// With no cap the same feed must be left alone.
+	called = 0
+	store.SetMaxFeedTTL(0)
+	if _, err := store.FetchNews(ctx, []domain.Feed{*loaded}, fetcher); err != nil {
+		t.Fatal(err)
+	}
+	if called != 0 {
+		t.Errorf("fetcher called %d times with the cap off, want the publisher's own ttl honoured", called)
+	}
+}
+
+func feedNames(feeds []domain.Feed) []string {
+	out := make([]string, 0, len(feeds))
+	for _, f := range feeds {
+		out = append(out, f.Name)
+	}
+	return out
+}
+
+func contains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}

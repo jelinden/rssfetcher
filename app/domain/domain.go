@@ -61,6 +61,43 @@ func (f Feed) NeverChecked() bool {
 	return f.OKAt.IsZero() && f.LastErrorAt.IsZero()
 }
 
+// EffectiveTTL is how long the fetcher waits after a good fetch of this feed: the
+// publisher's own <ttl>, capped at maxTTL when that is set. A cap matters because
+// plenty of feeds publish a ttl of hours or days, which a news reader cannot accept
+// - and a publisher asking for a week gets the same courtesy whether or not the
+// operator is watching.
+func (f Feed) EffectiveTTL(maxTTL time.Duration) time.Duration {
+	ttl := f.TTL
+	if maxTTL > 0 && (ttl <= 0 || ttl > maxTTL) {
+		return maxTTL
+	}
+	return ttl
+}
+
+// DueIn is how long until the feed should be fetched again, or zero when it is due
+// now. It is the number the admin UI shows next to the fetch time, so a row that
+// has not moved in an hour can be explained without reading the source.
+func (f Feed) DueIn(now time.Time, maxTTL time.Duration) time.Duration {
+	if f.FetchedAt.IsZero() {
+		return 0
+	}
+	ttl := f.EffectiveTTL(maxTTL)
+	if ttl <= 0 {
+		return 0
+	}
+	// A FetchedAt in the future (an NTP correction after the process read the
+	// clock) must not postpone the next poll by more than one ttl.
+	at := f.FetchedAt
+	if at.After(now) {
+		at = now
+	}
+	d := at.Add(ttl).Sub(now)
+	if d <= 0 {
+		return 0
+	}
+	return d
+}
+
 // StatusAge is how long ago the current status was recorded, taking the more
 // recent of the two timestamps. It is zero when nothing has been attempted, so
 // the caller never renders "broken since 500000 hours ago".
@@ -188,6 +225,11 @@ type Page struct {
 }
 
 type ViewPage struct {
+	// Now and the polling policy, so a feed that has not moved can explain that
+	// the publisher asked for it (a row fetched an hour ago looks broken otherwise).
+	Now       time.Time     `json:"now"`
+	HonourTTL bool          `json:"honourTtl"`
+	MaxTTL    time.Duration `json:"maxTtl"`
 	Page
 	Feeds         []Feed            `json:"feeds"`
 	Categories    []rss.Category    `json:"categories"`

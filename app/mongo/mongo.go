@@ -65,6 +65,9 @@ type Store struct {
 	// published has passed. It is an atomic because the fetch loop reads it while
 	// a test may change it.
 	honourFeedTTL atomic.Bool
+	// maxFeedTTL caps how long a publisher's <ttl> may keep a feed out of the
+	// cycle; 0 honours it exactly. Same reason for being atomic as above.
+	maxFeedTTL atomic.Int64
 }
 
 // NewStore wraps a connected client. The password hasher is exposed through
@@ -560,15 +563,27 @@ func (s *Store) SubCategoryByName(ctx context.Context, name string) (rss.SubCate
 // without a recorded fetch, plus everything whose own <ttl> has elapsed. A feed
 // that published "refresh me hourly" should not be pulled every two minutes
 // because our global interval happens to be shorter.
-func FeedsDueForFetch(feeds []domain.Feed, now time.Time) []domain.Feed {
+// FeedsDueForFetch returns the feeds that must be downloaded now: everything that
+// has never been fetched, everything whose publisher published no <ttl>, and
+// everything whose ttl window has passed. maxTTL caps the second of those - a
+// publisher asking for a week is only obeyed for as long as the operator is
+// willing to wait (0 honours the publisher exactly).
+func FeedsDueForFetch(feeds []domain.Feed, now time.Time, maxTTL time.Duration) []domain.Feed {
 	due := make([]domain.Feed, 0, len(feeds))
 	for _, feed := range feeds {
-		if feed.TTL <= 0 || feed.FetchedAt.IsZero() || !now.Before(feed.FetchedAt.Add(feed.TTL)) {
+		if wait := feed.EffectiveTTL(maxTTL); wait <= 0 || feed.FetchedAt.IsZero() || !now.Before(feed.FetchedAt.Add(wait)) {
 			due = append(due, feed)
 		}
 	}
 	return due
 }
+
+// SetMaxFeedTTL caps how long a publisher's <ttl> can keep a feed out of the
+// cycle. Zero (the default) honours whatever the feed asks for.
+func (s *Store) SetMaxFeedTTL(max time.Duration) { s.maxFeedTTL.Store(int64(max)) }
+
+// MaxFeedTTL is the configured cap, 0 for "honour the publisher exactly".
+func (s *Store) MaxFeedTTL() time.Duration { return time.Duration(s.maxFeedTTL.Load()) }
 
 // fetchResult is one feed download attempt.
 // FetchReport is what a manual check of a single feed produced.
@@ -658,7 +673,7 @@ func (s *Store) FetchNews(ctx context.Context, feeds []domain.Feed, fetcher rss.
 
 	due := feeds
 	if s.HonourFeedTTL() {
-		due = FeedsDueForFetch(feeds, time.Now())
+		due = FeedsDueForFetch(feeds, time.Now(), s.MaxFeedTTL())
 		if skipped := len(feeds) - len(due); skipped > 0 {
 			log.Printf("rssfetcher: %d of %d feeds are inside their own <ttl> window, skipping them", skipped, len(feeds))
 		}
