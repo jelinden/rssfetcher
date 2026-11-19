@@ -14,7 +14,38 @@ MONGO_URI=mongodb://127.0.0.1:27017/news ./start-local.sh   # dev
 MONGO_URI=mongodb://... ./start-prod.sh                     # prod restart
 ```
 
-Or directly:
+The scripts stay in the foreground, which is what a supervisor wants: systemd
+(`Type=simple`) and containers need to own the process itself, and `exec` means
+Ctrl-C, `docker stop` and `systemd stop` all reach the server instead of a
+wrapper shell. To start one by hand from an ssh session, ask for the detached
+mode instead:
+
+```sh
+RSSFETCHER_BACKGROUND=true ./start-prod.sh
+#   rssfetcher started in the background (pid 69082), listening on 0.0.0.0:9200
+#     logs: tail -f rssfetcher.log
+#     stop: kill $(cat run/rssfetcher.pid)
+```
+
+That runs the server under `nohup`, writes its pid to `run/rssfetcher.pid`
+(the script refuses to start a second instance while that pid is alive) and
+appends output to `rssfetcher.log`. Both paths are git-ignored.
+
+Credentials come from the environment, and the recommended place to keep them is
+a `chmod 600` `.env` file, which is git-ignored:
+
+```sh
+set -a; . ./.env; set +a; ./start-prod.sh
+```
+
+Prefer that over `export $(xargs < .env)`, which word-splits values containing
+spaces or quotes and mangles passwords. The scripts `export` the values and
+deliberately do **not** pass them as flags: argv is world readable through
+`ps(1)` and `/proc/<pid>/cmdline`, so `-address`, `-admin-password` and
+`-auth-secret` on a command line would publish the mongo credentials, the admin
+password and the CSRF secret to every local user (and into shell history).
+
+Or directly, for a run with no secrets involved:
 
 ```sh
 ./rssfetcher -address mongodb://127.0.0.1:27017 -database news -listen :9200
@@ -22,7 +53,7 @@ Or directly:
 
 | flag                 | default                     | meaning                                                            |
 | -------------------- | --------------------------- | ------------------------------------------------------------------ |
-| `-address`           | `mongodb://localhost:27017` | MongoDB connection URI (`mongodb://` or `mongodb+srv://`)           |
+| `-address`           | `$MONGO_URI`, else `mongodb://localhost:27017` | MongoDB connection URI (`mongodb://` or `mongodb+srv://`) |
 | `-database`          | `news`                      | database name (the database in the URI wins)                        |
 | `-listen`            | `:9200`                     | HTTP listen address                                                 |
 | `-env`               | `dev`                       | `dev` refreshes every 2m, `prod` every 20m                          |

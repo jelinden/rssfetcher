@@ -6,3 +6,12 @@
 
 nohup.out
 *.log
+
+# Local configuration: MONGO_URI with its credentials, the admin password and
+# RSSFETCHER_AUTH_SECRET. Never commit this.
+.env
+.env.*
+!.env.example
+
+# Runtime state of background starts (pidfile).
+/run/

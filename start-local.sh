@@ -27,23 +27,17 @@ fi
 
 go build -mod=vendor -o rssfetcher rssfetcher.go
 
+# Credentials reach the binary through the environment, never through argv:
+# ps(1) and /proc/<pid>/cmdline are world readable.
+export MONGO_URI RSSFETCHER_ADMIN_USER RSSFETCHER_ADMIN_PASSWORD RSSFETCHER_AUTH_SECRET
+
 args=(
 	-env dev
-	-address "$MONGO_URI"
 	-listen 127.0.0.1:9200
 	-interval 60s
 	# Local runs pull every feed on every cycle; production respects <ttl>.
 	-honour-feed-ttl=false
 )
-# Only pass what is actually configured: an empty -admin-user would otherwise
-# look like an intentional choice to seed nothing.
-if [ -n "${RSSFETCHER_ADMIN_USER:-}" ]; then
-	args+=(-admin-user "$RSSFETCHER_ADMIN_USER")
-fi
-if [ -n "${RSSFETCHER_ADMIN_PASSWORD:-}" ]; then
-	args+=(-admin-password "$RSSFETCHER_ADMIN_PASSWORD")
-fi
-
 # Templates and the stylesheet are compiled into the binary, so the working
 # directory does not matter. Pass -templates <dir> to edit the markup live.
 exec ./rssfetcher "${args[@]}" "$@"
