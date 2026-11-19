@@ -525,3 +525,82 @@ What this publisher taught us that the fixture could not: its ETag changes on ev
 origin refresh because `<lastBuildDate>` is regenerated, so a `200` with an identical
 item set is normal - and the store still reported **0 items written** for that cycle,
 which is the `$set` with nothing changed behaviour the bulk write relies on.
+
+## Feed status in the admin UI (follow-up request)
+
+After the review was committed the running instance was looked at, and it had
+collected seven broken subscriptions: two 404s (a publisher that moved), three feeds
+serving an HTML page instead of XML, one feed using HTML named entities in an XML
+document (`invalid character entity &auml;`), and one URL stored with a leading
+space (`" https://feeds.yle.fi/..."`, pasted by hand years ago, which no URL parser
+accepts).
+
+The errors were all in the log twice over - as a line per feed and again in the joined
+cycle error, which is what M3 added - and nowhere an operator would look. Fixing one
+meant reading the log, finding the id in MongoDB, and either editing it blind or
+deleting and re-adding the row.
+
+So the outcome of every fetch attempt is now stored on the feed itself:
+
+| field | written by |
+| --- | --- |
+| `lastError`, `lastErrorAt` | a failed attempt (`$inc failures`, so overlapping cycles cannot lose an increment) |
+| `okAt`, `lastItems`, `failures = 0` | an attempt that worked, either a body or a 304 |
+| `etag`, `lastModified`, `fetchedAt`, `ttl` | an attempt that got a body - a failure deliberately leaves them alone, so a 500 today does not cost a full re-download tomorrow |
+
+`Store.SaveFeedValidators` became `Store.RecordFetch(FetchOutcome)` for the same
+reason: validators and health were two writes about one event, and the second could
+fail without the first. `Store.FetchOne` reuses the cycle's own path for a single
+feed.
+
+In the UI each row carries `failing` (with the message and the consecutive failure
+count), `ok` (with new-item count and fetch time) or `never checked`; the header says
+`6 broken of 8 subscriptions`, `/view/?status=broken` lists just those, and
+**check now** (`POST /check/<id>`, CSRF protected, bounded by the new
+`-check-timeout` defaulting to 30s) fetches one feed on demand so fixing a URL can be
+verified immediately.
+
+Live run against the seven broken publishers above, then:
+
+```
+GET  /view/?status=broken   6 broken of 8 subscriptions
+POST /save/<yle id>         303   (URL repaired, leading space gone)
+POST /check/<yle id>        303   checked yle concepts: 20 items
+POST /check/<is.fi id>      303   checked is.fi esports: still failing: rss: got status 404 for ...
+POST /check/<marketwatch>   303   checked marketwatch: no new items
+```
+
+and the row list afterwards:
+
+```
+is.fi esports      failing  8 consecutive failures  rss: got status 404 for https://www.is.fi/…
+marketwatch        ok       0 new, fetched 06:32 UTC
+reuters agency     failing  7 consecutive failures  rss: got status 404 for https://www.reutersagency…
+seura matkailu     failing  7 consecutive failures  rss: unknown feed format: <!DOCTYPE html> …
+seura viihde       failing  7 consecutive failures  rss: unknown feed format: <!DOCTYPE html> …
+uusilahti          failing  7 consecutive failures  rss: unknown feed format: <!doctype html> …
+viimeinen muru     failing  7 consecutive failures  XML syntax error on line 11: invalid character entity &auml;
+yle concepts       ok       0 new, fetched 06:32 UTC
+```
+
+Two things the live run caught in the new code before it shipped:
+
+* The row first said `0 items` for a feed with ten stored articles, because
+  `lastItems` counts what the last fetch *wrote*, and re-fetching known items writes
+  nothing. It says `0 new` now, and a check that stores nothing says `no new items`
+  rather than `0 items`, which reads like an empty feed.
+* `-interval 40s` with the prod default `-interval-jitter 2m` is refused at startup
+  (F2), which is the right answer but meant the probe had to name a jitter.
+
+Left as is deliberately: an error message is stored *unclassified*. Sorting these into
+"gone for good" (404, 410), "retry later" (429, 5xx, timeout) and "publisher is
+misconfigured" (HTML body, bad entities) would let the UI suggest delete versus wait,
+and would let a 404 stop counting up after a while instead of polling a dead URL every
+cycle forever. That is a policy decision about the user's feeds, so it is worth asking
+before implementing.
+
+The `&auml;` feed is also a genuine parse failure that *could* be repaired: the
+document is XML containing HTML named entities. Rewriting the common ones to numeric
+references before parsing would rescue that subscription, but it means second-guessing
+a document that is technically malformed, and doing it inside a `CDATA` section would
+corrupt content - so it needs its own tests and a flag, not a quick fix.

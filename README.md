@@ -61,6 +61,7 @@ Or directly, for a run with no secrets involved:
 | `-interval-jitter`   | `10s` / `2m`                | random ± spread on the interval, so a restart does not hit every publisher at once |
 | `-no-jitter`         | `false`                     | poll on an exact interval (a duration flag cannot tell "0" from "unset", so this is a boolean) |
 | `-fetch-timeout`     | `2m`                        | deadline of one fetch cycle, independent of `-interval`              |
+| `-check-timeout`     | `30s`                       | how long a "check now" request in the UI may take                    |
 | `-honour-feed-ttl`   | `true`                      | skip a feed until the `<ttl>` it published has passed                |
 | `-max-items-per-feed`| `25`                        | newest items stored per feed                                        |
 | `-allow-private-urls`| `false`                     | let feeds resolve to loopback/RFC1918 addresses (SSRF guard off)     |
@@ -96,6 +97,32 @@ each cycle is a single pass:
   on purpose with `-allow-private-urls`.
 * **Errors are reported.** A cycle in which feeds failed returns an error and
   logs it, instead of printing a healthy summary either way.
+
+## Feed status
+
+Every fetch attempt writes its result onto the feed document, so a broken
+subscription is visible in the admin UI instead of only in the server log:
+
+| field         | meaning                                                            |
+| ------------- | ------------------------------------------------------------------ |
+| `lastError`   | why the last attempt failed, cut to 400 bytes (the log keeps it all) |
+| `lastErrorAt` | when that happened                                                  |
+| `failures`    | consecutive failures, so "newly broken" differs from "broken for a week" |
+| `okAt`        | the last attempt that worked                                         |
+| `lastItems`   | how many *new* items the last fetch with a body wrote (a re-fetch of known items writes none) |
+
+The feed list shows a `failing` badge with the message, an `ok` badge with the
+item count and fetch time, or `never checked` for a feed that has not been polled
+yet. The summary line counts them - `6 broken of 8 subscriptions` - and
+`/view/?status=broken` lists only the ones needing attention.
+
+Each row has a **check now** button, which fetches that single feed immediately
+and reports the outcome (`checked yle concepts: 20 items`,
+`checked is.fi esports: still failing: rss: got status 404 ...`). It is a POST, it
+carries the CSRF token, it is bounded by `-check-timeout`, and it records the
+result the same way a cycle does - so the sequence fix URL → check → green badge
+happens without waiting for the next interval. A check that fails increments
+`failures`, because it was an attempt.
 
 ## Login
 
@@ -185,6 +212,9 @@ Two stored fields changed shape, and both are self-healing on the next fetch:
 * `feedcollection` gained `etag`, `lastModified`, `fetchedAt` and `ttl`. Feeds stored
   before this have none of them, so they are fetched unconditionally once and the
   validators are recorded from then on.
+* `feedcollection` also gained the status fields `lastError`, `lastErrorAt`,
+  `failures`, `okAt` and `lastItems`. They are absent on old documents, which the UI
+  renders as `never checked`; the first fetch of that feed fills them in.
 * `newscollection.rssGuid` for feeds that published **relative** identifiers changes
   from `/news/1` to `<feed url>|/news/1`. The old document is not deleted: the item
   simply appears once more under its namespaced guid. To clean up afterwards:

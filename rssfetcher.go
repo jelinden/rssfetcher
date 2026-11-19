@@ -42,6 +42,7 @@ type config struct {
 	fetchJitter      time.Duration
 	noJitter         bool
 	fetchTimeout     time.Duration
+	checkTimeout     time.Duration // budget of one "check now" request in the admin UI
 	fetchOnStart     bool
 	maxItems         int
 	allowPrivateURLs bool
@@ -176,6 +177,7 @@ func registerFlags(f *flag.FlagSet, c *config) {
 
 	f.StringVar(&c.adminUser, "admin-user", envOr("RSSFETCHER_ADMIN_USER", ""), "username of the admin account to seed on first start (no default)")
 	f.StringVar(&c.adminPassword, "admin-password", envOr("RSSFETCHER_ADMIN_PASSWORD", ""), "password of the admin account; when empty, a random one is generated and printed once on first start")
+	f.DurationVar(&c.checkTimeout, "check-timeout", handler.DefaultRefetchTimeout, "how long a 'check now' request in the admin UI may take")
 	f.StringVar(&c.authSecret, "auth-secret", envOr("RSSFETCHER_AUTH_SECRET", ""), "secret signing CSRF tokens (generated per start when empty)")
 	f.DurationVar(&c.sessionTTL, "session-ttl", 12*time.Hour, "login session lifetime, sliding while in use")
 	f.BoolVar(&c.cookieSecure, "cookie-secure", false, "mark session cookies Secure (set this behind TLS)")
@@ -369,18 +371,26 @@ func main() {
 	log.Println("rssfetcher: stopped")
 }
 
+// handlerOptions maps the process configuration onto the admin UI options. A
+// method rather than an inline literal, so an option cannot be added to one side
+// and quietly forgotten on the other.
+func (c config) handlerOptions() handler.Options {
+	return handler.Options{
+		SessionTTL:     c.sessionTTL,
+		CookieSecure:   c.cookieSecure,
+		AuthSecret:     c.authSecret,
+		TrustProxy:     c.trustProxy,
+		RefetchTimeout: c.checkTimeout,
+	}
+}
+
 // middleware builds the handler chain, outermost first. Named rather than inlined
 // because the four layers of wrapping parentheses were unreadable, and the order
 // matters: the timeout bounds everything, access logging sees the final status,
 // recovery must wrap the handlers, and the security headers must also reach
 // responses produced by the other three.
 func middleware(cfg config, store *mongo.Store, templates *template.Template) (http.Handler, error) {
-	app, err := handler.New(store, templates, handler.Options{
-		SessionTTL:   cfg.sessionTTL,
-		CookieSecure: cfg.cookieSecure,
-		AuthSecret:   cfg.authSecret,
-		TrustProxy:   cfg.trustProxy,
-	})
+	app, err := handler.New(store, templates, cfg.handlerOptions())
 	if err != nil {
 		return nil, err
 	}
