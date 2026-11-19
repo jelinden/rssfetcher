@@ -167,6 +167,9 @@ func (h *Handler) ViewHandler(w http.ResponseWriter, r *http.Request) {
 	viewPage := domain.ViewPage{Page: h.page(w, r, "Feeds")}
 
 	viewPage.StatusFilter = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
+	viewPage.Now = time.Now()
+	viewPage.HonourTTL = h.opts.HonourFeedTTL
+	viewPage.MaxTTL = h.opts.MaxFeedTTL
 
 	var err error
 	// Removed feeds are listed too (that is how you see what you deleted), but

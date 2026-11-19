@@ -273,3 +273,80 @@ func TestCheckHandlerSaysNoNewItems(t *testing.T) {
 		t.Errorf("flash = %q, want the 304 explained as such", decoded)
 	}
 }
+
+// The other half of "why is this feed not updating": a row that was fetched an hour
+// ago and has not moved looks broken, but with the publisher asking for an hour it
+// is simply not due yet. The list has to say so, using the same policy the loop
+// uses (including -max-feed-ttl).
+func TestViewExplainsThePollingWindow(t *testing.T) {
+	store := newFakeStore()
+	seedFeed(store, domain.Feed{
+		Name:      "Hourly publisher",
+		URL:       "http://example.com/hourly.xml",
+		OKAt:      time.Now().Add(-time.Minute),
+		FetchedAt: time.Now().Add(-time.Minute),
+		TTL:       time.Hour,
+		LastItems: 3,
+	})
+
+	bodies := map[string]string{}
+	c := authenticatedClientWithOptions(t, store, func(o *Options) {
+		o.HonourFeedTTL = true
+	})
+	bodies["honoured"] = bodyOf(t, c, "/view/")
+	if !strings.Contains(bodies["honoured"], "next poll in 59m") {
+		t.Error("with -honour-feed-ttl the row does not say when the feed is fetched again")
+	}
+
+	// The cap changes what the operator should expect, so it has to be reflected.
+	c = authenticatedClientWithOptions(t, store, func(o *Options) {
+		o.HonourFeedTTL = true
+		o.MaxFeedTTL = 15 * time.Minute
+	})
+	body := bodyOf(t, c, "/view/")
+	if !strings.Contains(body, "next poll in 14m") {
+		t.Errorf("the row does not honour -max-feed-ttl: %s", between(body, "Hourly publisher", "edit"))
+	}
+
+	// With ttl skipping off the feed is polled on every cycle, and saying "next
+	// poll in ..." would be a lie.
+	c = authenticatedClientWithOptions(t, store, func(o *Options) { o.HonourFeedTTL = false })
+	body = bodyOf(t, c, "/view/")
+	if strings.Contains(body, "next poll in") {
+		t.Error("the row promises a polling window that is not configured")
+	}
+}
+
+// A feed whose window has passed is due now, and that needs no announcement.
+func TestViewStaysQuietAboutDueFeeds(t *testing.T) {
+	store := newFakeStore()
+	seedFeed(store, domain.Feed{
+		Name: "Overdue", URL: "http://example.com/over.xml",
+		FetchedAt: time.Now().Add(-2 * time.Hour), TTL: time.Hour, OKAt: time.Now().Add(-2 * time.Hour),
+	})
+	c := authenticatedClientWithOptions(t, store, func(o *Options) { o.HonourFeedTTL = true })
+	if body := bodyOf(t, c, "/view/"); strings.Contains(body, "next poll in") {
+		t.Error("a due feed is described as being held back")
+	}
+}
+
+func bodyOf(t *testing.T, c *client, path string) string {
+	t.Helper()
+	rec := c.get(path)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s = %d", path, rec.Code)
+	}
+	return rec.Body.String()
+}
+
+func between(body, start, end string) string {
+	i := strings.Index(body, start)
+	if i < 0 {
+		return body
+	}
+	rest := body[i:]
+	if j := strings.Index(rest, end); j > 0 {
+		return rest[:j]
+	}
+	return rest[:min(len(rest), 200)]
+}

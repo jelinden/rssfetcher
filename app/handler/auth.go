@@ -45,6 +45,11 @@ type Options struct {
 	// for as long as that publisher decides to stall. Zero means
 	// DefaultRefetchTimeout.
 	RefetchTimeout time.Duration
+	// HonourFeedTTL and MaxFeedTTL describe the polling policy, so the feed list
+	// can say "next poll in 4m" instead of looking stuck. They mirror
+	// -honour-feed-ttl and -max-feed-ttl.
+	HonourFeedTTL bool
+	MaxFeedTTL    time.Duration
 }
 
 // DefaultRefetchTimeout is the budget of one manual feed check: long enough for

@@ -6,10 +6,14 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/jelinden/rssfetcher/app/domain"
 )
 
 // The UI is compiled into the binary: parsing "public/tmpl/*" in a package level
@@ -69,12 +73,48 @@ func embeddedNames(fsys embed.FS, dir string) []string {
 	return names
 }
 
+// templateFuncs are the helpers the markup uses; they are registered before
+// parsing because a template that names an unknown function fails to parse.
+var templateFuncs = template.FuncMap{
+	// dueIn explains why a feed has not been fetched again: "" when it is due now,
+	// otherwise "next poll in 42m".
+	"dueIn": func(feed domain.Feed, now time.Time, maxTTL time.Duration) string {
+		wait := feed.DueIn(now, maxTTL)
+		if wait <= 0 {
+			return ""
+		}
+		return "next poll in " + humanDuration(wait)
+	},
+}
+
+// humanDuration rounds a wait to something worth reading in a table: 45s, 42m,
+// 1h30m. time.Duration.String() would print "59m0s" for every minute-sized wait,
+// which is noise in a list of feeds.
+func humanDuration(d time.Duration) string {
+	switch {
+	case d <= 0:
+		return "0s"
+	case d < time.Minute:
+		// Rounded up: "next poll in 0s" for a feed that is due in a moment would
+		// read as though the fetcher had stopped.
+		return fmt.Sprintf("%ds", int(math.Ceil(d.Seconds())))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(math.Ceil(d.Minutes())))
+	}
+	total := int(math.Ceil(d.Minutes()))
+	h, m := total/60, total%60
+	if m == 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dh%dm", h, m)
+}
+
 // LoadTemplates parses the UI templates. An empty dir uses the embedded copies,
 // which is what a deployed binary needs; passing a directory reads them from
 // disk instead so the markup can be tweaked without a rebuild.
 func LoadTemplates(dir string) (*template.Template, error) {
 	if dir == "" {
-		tmpl, err := template.ParseFS(templateFS, "tmpl/*.html")
+		tmpl, err := template.New("").Funcs(templateFuncs).ParseFS(templateFS, "tmpl/*.html")
 		if err != nil {
 			return nil, fmt.Errorf("handler: parsing embedded templates: %w", err)
 		}
@@ -91,7 +131,7 @@ func LoadTemplates(dir string) (*template.Template, error) {
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("handler: no templates found in %s", dir)
 	}
-	tmpl, err := template.ParseGlob(pattern)
+	tmpl, err := template.New("").Funcs(templateFuncs).ParseGlob(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("handler: parse templates in %s: %w", dir, err)
 	}

@@ -37,6 +37,7 @@
                 <span class="removed">removed</span>
                 {{else}}
                 {{template "feedstatus" .}}
+                {{- if $.HonourTTL}}{{with dueIn . $.Now $.MaxTTL}}<span class="meta">{{.}}</span>{{end}}{{end}}
                 <a href="/edit/{{.ID.Hex}}">edit</a>
                 <form class="inline" method="POST" action="/check/{{.ID.Hex}}">
                     {{template "csrf" $}}
